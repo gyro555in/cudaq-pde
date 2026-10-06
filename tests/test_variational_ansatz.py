@@ -6,6 +6,7 @@ import cudaq
 import numpy as np
 import pytest
 
+from ansatz_reference import apply_cx, numpy_ansatz
 from cudaq_pde.solvers.variational_kernels import hea_state
 
 TOL = 1e-12
@@ -16,41 +17,6 @@ def cpu_target() -> Iterator[None]:
     cudaq.set_target("qpp-cpu")
     yield
     cudaq.reset_target()
-
-
-def _ry(psi: np.ndarray, n: int, qubit: int, theta: float) -> np.ndarray:
-    """RY(theta) on ``qubit``; qubit 0 is the last axis (least significant bit)."""
-    c, s = np.cos(theta / 2), np.sin(theta / 2)
-    gate = np.array([[c, -s], [s, c]])
-    axis = n - 1 - qubit
-    t = psi.reshape([2] * n)
-    return np.moveaxis(np.tensordot(gate, t, axes=([1], [axis])), 0, axis).reshape(-1)
-
-
-def _cx(psi: np.ndarray, n: int, control: int, target: int) -> np.ndarray:
-    t = psi.reshape([2] * n).copy()
-    idx = [slice(None)] * n
-    idx[n - 1 - control] = 1
-    sub = t[tuple(idx)]
-    # after fixing the control axis the target axis index shifts if it came later
-    tgt_axis = n - 1 - target
-    if tgt_axis > n - 1 - control:
-        tgt_axis -= 1
-    t[tuple(idx)] = np.flip(sub, axis=tgt_axis)
-    return t.reshape(-1)
-
-
-def numpy_ansatz(n: int, thetas: np.ndarray, depth: int) -> np.ndarray:
-    psi = np.zeros(2**n)
-    psi[0] = 1.0
-    for i in range(n):
-        psi = _ry(psi, n, i, thetas[i])
-    for d in range(depth):
-        for i in range(n - 1):
-            psi = _cx(psi, n, i, i + 1)
-        for i in range(n):
-            psi = _ry(psi, n, i, thetas[(d + 1) * n + i])
-    return psi
 
 
 @pytest.mark.parametrize("depth", [0, 1, 2, 3])
@@ -70,7 +36,7 @@ def test_numpy_reference_cx_is_a_permutation() -> None:
     for control, target in [(0, 1), (1, 0), (0, 2), (2, 1)]:
         for j in range(2**n):
             basis = np.eye(2**n)[j]
-            out = _cx(basis, n, control, target)
+            out = apply_cx(basis, n, control, target)
             bits = [(j >> k) & 1 for k in range(n)]
             if bits[control]:
                 bits[target] ^= 1

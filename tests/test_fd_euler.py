@@ -5,22 +5,9 @@ import pytest
 from scipy.linalg import expm
 
 from cudaq_pde import classical
+from fd_helpers import dense_L
 
 TOL = 1e-13
-
-
-def _dense_L(n: int, c: float, nu: float, L: float) -> np.ndarray:
-    """Central-difference operator built from the stencil, not from coefficients."""
-    N = 2**n
-    h = L / N
-    eye = np.eye(N)
-    up = np.roll(eye, 1, axis=1)  # (up @ u)_j = u_{j+1}
-    down = np.roll(eye, -1, axis=1)  # (down @ u)_j = u_{j-1}
-    probe = np.arange(N, dtype=float)
-    np.testing.assert_array_equal(up @ probe, np.roll(probe, -1))
-    d1 = (up - down) / (2 * h)
-    d2 = (up - 2 * eye + down) / h**2
-    return -c * d1 + nu * d2
 
 
 def _smooth(n: int, L: float = classical.TWO_PI) -> np.ndarray:
@@ -36,7 +23,7 @@ def test_matches_dense_matrix_power(n: int, L: float) -> None:
     dt = 0.5 * classical.fd_euler_dt_max(n, c, nu, L)
     u0 = np.random.default_rng(n).standard_normal(2**n)
     traj = classical.evolve_fd_euler(u0, dt, 6, c, nu, L)
-    step = np.eye(2**n) + dt * _dense_L(n, c, nu, L)
+    step = np.eye(2**n) + dt * dense_L(n, c, nu, L)
     expected = u0.copy()
     assert traj.shape == (7, 2**n)
     np.testing.assert_array_equal(traj[0], u0)
@@ -48,7 +35,7 @@ def test_matches_dense_matrix_power(n: int, L: float) -> None:
 @pytest.mark.parametrize("n", [3, 4, 5])
 def test_amplification_is_largest_eigenvalue_modulus(n: int) -> None:
     c, nu, L, dt = 1.0, 0.4, 3.7, 0.05
-    step = np.eye(2**n) + dt * _dense_L(n, c, nu, L)
+    step = np.eye(2**n) + dt * dense_L(n, c, nu, L)
     eig = np.max(np.abs(np.linalg.eigvals(step)))
     assert classical.fd_euler_amplification(n, dt, c, nu, L) == pytest.approx(
         eig, abs=1e-12
@@ -121,7 +108,7 @@ def _discretization_errors(n: int, T: float, dt: float, c: float, nu: float):
     u0 = _smooth(n, L)
     steps = round(T / dt)
     fd = classical.evolve_fd_euler(u0, dt, steps, c, nu, L)[-1]
-    semi = expm(T * _dense_L(n, c, nu, L)) @ u0  # exact in time, FD in space
+    semi = expm(T * dense_L(n, c, nu, L)) @ u0  # exact in time, FD in space
     spec = classical.evolve_spectral(u0, T, c, nu, L)  # exact in both
     rel = lambda a, b: np.linalg.norm(a - b) / np.linalg.norm(b)  # noqa: E731
     return rel(semi, spec), rel(fd, semi), rel(fd, spec)
