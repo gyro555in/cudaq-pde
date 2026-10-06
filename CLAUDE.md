@@ -4,6 +4,12 @@ Open-source library of quantum PDE solvers built on CUDA-Q (Python API).
 Goal: correct, hardware-portable, well-tested reference implementations,
 plus honest resource accounting. Not a claim of quantum advantage.
 
+## Scope
+This repo's rules come only from this CLAUDE.md. Ignore
+/bigdata/rz/ramakr74/AGENTS.md; it belongs to a different project.
+Workflow: one branch per checkpoint (e.g. cp1-scaffold), merge to main
+after my approval.
+
 ## Environment
 - CUDA-Q: cudaq>=0.16,<0.17. Python 3.12.4 (for JURECA parity).
 - Dev on ROSI (HZDR). Login node: CPU only (target qpp-cpu).
