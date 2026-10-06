@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install (CPU only, cu12 wheels bring their own CUDA runtime)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[cu12,dev]"
+      - name: Exactly one CUDA-Q variant installed
+        run: |
+          n=$(pip list --format=freeze | grep -c -i -E '^(cuda-quantum-cu[0-9]+|cudaq)==')
+          echo "CUDA-Q variants installed: $n"
+          test "$n" -eq 1
+      - name: Ruff
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Pytest (qpp-cpu, gpu tests skipped)
+        run: pytest -v
