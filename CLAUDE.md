@@ -22,9 +22,10 @@ after my approval.
   the resource table run on the login node; anything heavier (large sweeps,
   GPU tests, benchmarks) runs via sbatch from the repo root.
 - CUDA-Q runtime threads spin across all cores even with `OMP_NUM_THREADS=1`
-  (measured: 3.8 s CPU for 0.5 s of work). Run login-node tests and scripts
-  pinned to one core, e.g. `taskset -c 0 pytest`, which makes CPU time equal
-  wall time (0.4 s CPU for the same work).
+  (measured: 3.8 s CPU for 0.5 s of work). On the login node run tests with
+  `env/pytest_login.sh`, which pins to one core so CPU time equals wall time
+  (0.4 s CPU for the same work). It refuses to run inside a Slurm job; there use
+  plain `pytest`. Pin other login-node scripts the same way with `taskset -c 0`.
 
 ### Activation (ROSI)
 ```bash
@@ -40,7 +41,8 @@ Do NOT load any CUDA module; CUDA-Q wheels bring their own runtime.
 ### Install and test
 ```bash
 pip install -e ".[cu12,dev]"   # or [cu13,dev]; install exactly one CUDA-Q variant
-pytest                          # CPU (qpp-cpu); add --run-gpu only on a GPU node
+env/pytest_login.sh             # login node (pinned); in a Slurm job use plain pytest
+pytest --run-gpu -m gpu         # GPU tests, only on a GPU node via sbatch
 ruff check . && ruff format --check .
 ```
 
