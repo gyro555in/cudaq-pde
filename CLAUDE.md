@@ -50,7 +50,15 @@ ruff check . && ruff format --check .
 - `src/cudaq_pde/`: `classical.py`, `encoding.py`, `encoding_kernels.py`,
   `metadata.py`, `solvers/` (`spectral*.py`: gate-level advection;
   `variational.py` driver and `variational_kernels.py` ansatz: advection-diffusion)
-- `tests/`, `examples/`, `benchmarks/`, `logs/` (sbatch output, gitignored)
+- `tests/`, `examples/`, `benchmarks/`, `logs/` (sbatch output, gitignored),
+  `results/` (example plots and JSON, gitignored)
+- Release files: `README.md` (snippets and resource table are checked by
+  `tests/test_readme.py`), `CHANGELOG.md`, `CITATION.cff`; the version in
+  pyproject, CITATION and CHANGELOG must agree (`tests/test_release_metadata.py`).
+  No license is chosen yet, and date, DOI and ORCID are deliberately not set.
+- Examples (`examples/advection_spectral.py`,
+  `examples/advection_diffusion_variational.py`) write a PNG and a metadata JSON
+  to `results/`. On the login node run them pinned: `taskset -c 0 python examples/<file>.py`.
 - `env/`: activation script, lock file, one-off environment checks (excluded from ruff)
 - Submit sbatch jobs from the repo root, output goes to `logs/%x_%j.out`.
 - `benchmarks/spectral_resources.py` prints the resource table;
