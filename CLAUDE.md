@@ -55,7 +55,18 @@ ruff check . && ruff format --check .
 - n qubits encode N = 2**n grid values via amplitude encoding (normalized).
   Track the norm classically and document it.
 - Periodic boundary conditions in the MVP.
-- Bit/qubit ordering must be documented and tested once against numpy.
+- Qubit ordering (measured on CUDA-Q 0.16, tested against numpy in
+  `tests/test_encoding_cudaq.py`): grid index j = sum_k b_k 2^k, qubit k holds
+  bit b_k. Qubit 0 is the least significant bit, qubit n-1 the most
+  significant. `psi[j] = u[j] / ||u||` equals the `cudaq.get_state` layout, so
+  no bit reversal is needed. In `cudaq.sample` bitstrings character k is qubit
+  k (the string reads LSB first); convert with
+  `cudaq_pde.encoding.bitstring_to_index`. All kernels (QFT, phases) must use
+  this convention.
+- Wavenumbers: `classical.wavenumbers(n, L)` gives k in FFT array order
+  (0, 1, ..., N/2-1, -N/2, ..., -1 times 2 pi / L). The Nyquist mode is
+  m = -N/2. `evolve_spectral(..., real=False)` keeps the complex result so a
+  circuit can be compared with the same convention.
 
 ## Hardware portability rule
 - Solvers intended for QPUs are gate-level @cudaq.kernel code
