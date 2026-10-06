@@ -46,3 +46,89 @@ def reverse_qubits(q: cudaq.qview):
     n = q.size()
     for i in range(n // 2):
         swap(q[i], q[n - 1 - i])
+
+
+@cudaq.kernel
+def phase_layer_natural(q: cudaq.qview, angles: list[float]):
+    """``R1(angles[b])`` on the qubit holding bit b of the Fourier index."""
+    n = q.size()
+    for b in range(n):
+        r1(angles[b], q[b])
+
+
+@cudaq.kernel
+def phase_layer_mirrored(q: cudaq.qview, angles: list[float]):
+    """Same phases with mirrored qubits, for the swap-free circuit.
+
+    Without the QFT bit reversal the register holds the Fourier index bit-
+    reversed, so bit b lives on qubit n-1-b.
+    """
+    n = q.size()
+    for b in range(n):
+        r1(angles[b], q[n - 1 - b])
+
+
+@cudaq.kernel
+def nyquist_phase(q: cudaq.qview, phi: float, mirrored: bool):
+    """Phase ``exp(i phi)`` on the single Nyquist basis state.
+
+    The Nyquist state has the top Fourier bit set and all others clear. In the
+    natural layout that is qubit n-1 set; mirrored, qubit 0 set. Implemented as
+    X on the clear qubits, one (n-1)-controlled R1, X again.
+    """
+    n = q.size()
+    if mirrored:
+        for i in range(1, n):
+            x(q[i])
+        r1.ctrl(phi, q.back(n - 1), q[0])
+        for i in range(1, n):
+            x(q[i])
+    else:
+        for i in range(n - 1):
+            x(q[i])
+        r1.ctrl(phi, q.front(n - 1), q[n - 1])
+        for i in range(n - 1):
+            x(q[i])
+
+
+@cudaq.kernel
+def spectral_advection_on(
+    q: cudaq.qview,
+    angles: list[float],
+    phi: float,
+    zero: bool,
+    swaps: bool,
+    steps: int,
+):
+    """``steps`` repetitions of QFT-dagger, phase layer, QFT on register ``q``.
+
+    Swap-free (``swaps=False``): ``B-dagger, D', B``. With swaps: ``B-dagger, R,
+    D, R, B``. Both equal ``QFT D QFT-dagger`` exactly.
+    """
+    for _ in range(steps):
+        iqft_b(q)
+        if swaps:
+            reverse_qubits(q)
+            phase_layer_natural(q, angles)
+            if zero:
+                nyquist_phase(q, phi, False)
+            reverse_qubits(q)
+        else:
+            phase_layer_mirrored(q, angles)
+            if zero:
+                nyquist_phase(q, phi, True)
+        qft_b(q)
+
+
+@cudaq.kernel
+def spectral_advection(
+    amps: list[complex],
+    angles: list[float],
+    phi: float,
+    zero: bool,
+    swaps: bool,
+    steps: int,
+):
+    """Load ``amps`` and apply :func:`spectral_advection_on`."""
+    q = cudaq.qvector(amps)
+    spectral_advection_on(q, angles, phi, zero, swaps, steps)
