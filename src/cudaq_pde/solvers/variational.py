@@ -54,10 +54,14 @@ def init_theta(
 def fd_target(
     psi_prev: NDArray[np.float64], dt: float, c: float, nu: float, L: float
 ) -> NDArray[np.float64]:
-    """Unnormalized ``b = (I + dt Lfd) psi_prev`` via the three cyclic shifts."""
+    """Unnormalized ``b = (I + dt Lfd) psi_prev`` via identity, decrement, increment."""
     n = encoding.num_qubits(psi_prev.size)
-    a0, ap, am = classical.fd_euler_coefficients(n, dt, c, nu, L)
-    return a0 * psi_prev + ap * np.roll(psi_prev, -1) + am * np.roll(psi_prev, 1)
+    a0, a_dec, a_inc = classical.fd_euler_coefficients(n, dt, c, nu, L)
+    return (
+        a0 * psi_prev
+        + a_dec * classical.decrement(psi_prev)
+        + a_inc * classical.increment(psi_prev)
+    )
 
 
 def simulator_cost_and_state(
@@ -72,23 +76,27 @@ def simulator_cost_and_state(
 
     Hardware version
     ----------------
-    ``I + dt Lfd = a0 I + a_plus S+ + a_minus S-`` with unitary cyclic shifts
-    ``S+-`` (``a0 = 1-2r``, ``a_plus = r-s``, ``a_minus = r+s``,
-    ``r = nu dt/h^2``, ``s = c dt/(2h)``), so for real states::
+    ``I + dt Lfd = a0 I + a_dec * decrement + a_inc * increment`` with the unitary
+    cyclic shifts of :func:`cudaq_pde.classical.decrement` (``u_{j+1}``) and
+    :func:`cudaq_pde.classical.increment` (``u_{j-1}``); ``a0 = 1-2r``,
+    ``a_dec = r-s``, ``a_inc = r+s``, ``r = nu dt/h^2``, ``s = c dt/(2h)``. So for
+    real states::
 
-        <psi(theta)|b> = a0 <psi|psi_prev> + a_plus <psi|S+|psi_prev>
-                         + a_minus <psi|S-|psi_prev>.
+        <psi(theta)|b> = a0 <psi|psi_prev> + a_dec <psi|decrement|psi_prev>
+                         + a_inc <psi|increment|psi_prev>.
 
-    Each term is the real part of ``<0|U_theta^dagger V U_prev|0>`` with
-    ``V in {I, S+, S-}``, estimated by a Hadamard test (ancilla in |+>,
-    controlled ``U_theta^dagger V U_prev``, H, measure Z; ``P(0) - P(1)``).
-    All amplitudes are real, so the imaginary part vanishes and one circuit per
-    overlap suffices.
+    Each term is the real part of ``<0|A(theta)^dagger V A(theta_prev)|0>`` with
+    ``V in {I, decrement, increment}`` and ``A`` the ansatz, estimated by a
+    Hadamard test (ancilla in |+>, controlled ``A^dagger V A_prev``, H, measure Z;
+    ``P(0) - P(1)``). All amplitudes are real, so the imaginary part vanishes and
+    one circuit per overlap suffices.
 
-    * Distinct overlap circuits per cost evaluation: **3** (V = I, S+, S-).
+    * Distinct overlap circuits per cost evaluation: **3**
+      (V = I, decrement, increment).
     * ``||b||^2`` depends on theta not at all. It needs
-      ``<psi_prev|S+|psi_prev>`` and ``<psi_prev|S+^2|psi_prev>`` (``S- = S+^T``),
-      i.e. **2 further circuits per step**, evaluated once per step.
+      ``<psi_prev|decrement|psi_prev>`` and ``<psi_prev|decrement^2|psi_prev>``
+      (``increment = decrement^T``), i.e. **2 further circuits per step**,
+      evaluated once per step.
     * A finite-difference gradient costs ``P + 1`` cost evaluations with
       ``P = n (depth + 1)``.
 

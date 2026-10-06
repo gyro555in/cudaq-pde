@@ -158,16 +158,36 @@ def evolve_spectral(
     return u
 
 
+def increment(u: NDArray) -> NDArray:
+    """Cyclic shift ``(increment u)_j = u_{j-1}``, i.e. ``np.roll(u, +1)``.
+
+    On computational basis states ``|j> -> |j + 1 mod N>`` (amplitudes move to the
+    next index), which is what the CUDA-Q ``increment`` kernels implement. This
+    function is the definition of the name; every shift in the package follows it.
+    """
+    return np.roll(u, 1)
+
+
+def decrement(u: NDArray) -> NDArray:
+    """Cyclic shift ``(decrement u)_j = u_{j+1}``, i.e. ``np.roll(u, -1)``.
+
+    On basis states ``|j> -> |j - 1 mod N>``; the inverse (and transpose) of
+    :func:`increment`.
+    """
+    return np.roll(u, -1)
+
+
 def fd_euler_coefficients(
     n: int, dt: float, c: float, nu: float, L: float = TWO_PI
 ) -> tuple[float, float, float]:
-    """Coefficients of ``I + dt*Lfd`` as ``a0 I + a_plus S+ + a_minus S-``.
+    """Coefficients ``(a0, a_dec, a_inc)`` of ``I + dt*Lfd``.
 
-    ``Lfd = -c (S+ - S-)/(2h) + nu (S+ - 2 I + S-)/h^2`` is the periodic
-    central-difference operator on ``N = 2**n`` points, ``h = L/N``, with the
-    cyclic shifts ``(S+ u)_j = u_{j+1}`` and ``S- = S+^T``. With
-    ``r = nu dt / h^2`` and ``s = c dt / (2 h)``:
-    ``a0 = 1 - 2r``, ``a_plus = r - s``, ``a_minus = r + s``.
+    ``I + dt Lfd = a0 I + a_dec * decrement + a_inc * increment`` where, for the
+    periodic central-difference operator on ``N = 2**n`` points, ``h = L/N``,
+    ``Lfd = -c (decrement - increment)/(2h) + nu (decrement - 2 I + increment)/h^2``.
+    With ``r = nu dt / h^2`` and ``s = c dt / (2 h)``:
+    ``a0 = 1 - 2r``, ``a_dec = r - s`` (weight of ``u_{j+1}``) and
+    ``a_inc = r + s`` (weight of ``u_{j-1}``).
     """
     if n < 1:
         raise ValueError(f"n must be >= 1, got {n}")
@@ -183,12 +203,12 @@ def fd_euler_amplification(
     """Largest Euler amplification ``max_m |g_m|`` over the N Fourier modes.
 
     Mode ``e^{i j theta}`` with ``theta = 2 pi m / N`` has
-    ``g = a0 + a_plus e^{i theta} + a_minus e^{-i theta}``. Explicit Euler is
+    ``g = a0 + a_dec e^{i theta} + a_inc e^{-i theta}``. Explicit Euler is
     stable (no growing mode) iff this is <= 1.
     """
-    a0, ap, am = fd_euler_coefficients(n, dt, c, nu, L)
+    a0, a_dec, a_inc = fd_euler_coefficients(n, dt, c, nu, L)
     theta = TWO_PI * np.arange(2**n) / 2**n
-    g = a0 + ap * np.exp(1j * theta) + am * np.exp(-1j * theta)
+    g = a0 + a_dec * np.exp(1j * theta) + a_inc * np.exp(-1j * theta)
     return float(np.max(np.abs(g)))
 
 
@@ -267,10 +287,10 @@ def evolve_fd_euler(
         raise ValueError(f"steps must be >= 0, got {steps}")
     n = _check_size(u0.size)
     check_fd_euler_stable(n, dt, c, nu, L)
-    a0, ap, am = fd_euler_coefficients(n, dt, c, nu, L)
+    a0, a_dec, a_inc = fd_euler_coefficients(n, dt, c, nu, L)
     out = np.empty((steps + 1, u0.size))
     out[0] = u0
     for s in range(steps):
         u = out[s]
-        out[s + 1] = a0 * u + ap * np.roll(u, -1) + am * np.roll(u, 1)
+        out[s + 1] = a0 * u + a_dec * decrement(u) + a_inc * increment(u)
     return out

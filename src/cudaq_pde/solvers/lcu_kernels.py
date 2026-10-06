@@ -1,7 +1,8 @@
 """Kernels preparing ``b_hat = (I + dt L) |psi_prev> / ||b||`` by LCU.
 
-``I + dt L = a0 I + a_dec D + a_inc U`` with ``D`` the decrement (CP4's ``S+``,
-``(S+ u)_j = u_{j+1}``) and ``U`` the increment (CP4's ``S-``). Two ancilla
+``I + dt L = a0 I + a_dec * decrement + a_inc * increment`` with the shifts defined
+by ``classical.decrement`` / ``classical.increment`` (``np.roll(u, -1)`` and
+``np.roll(u, +1)``). Two ancilla
 qubits ``anc``: slot ``|a0 a1> = |00>`` is the identity, ``a0 = 1`` the
 decrement, ``a1 = 1`` the increment, slot ``|11>`` has zero weight, so each
 controlled shift has a single ancilla control.

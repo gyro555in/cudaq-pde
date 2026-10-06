@@ -69,8 +69,17 @@ def test_decrement_is_inverse_of_increment(n: int, variant: str) -> None:
 
 
 @pytest.mark.parametrize("n", [3, 5])
-def test_naming_matches_the_fd_convention_of_cp4(n: int) -> None:
-    """CP4's S+ (u_{j+1}) is decrement and S- (u_{j-1}) is increment."""
+def test_kernels_follow_the_numpy_defined_names(n: int) -> None:
+    """increment is np.roll(u, +1) and decrement is np.roll(u, -1), by definition."""
+    from cudaq_pde import classical
+
     u = np.random.default_rng(n).standard_normal(2**n)
-    np.testing.assert_allclose(shift_matrix(n, 3) @ u, np.roll(u, -1), atol=TOL)
-    np.testing.assert_allclose(shift_matrix(n, 2) @ u, np.roll(u, +1), atol=TOL)
+    for variant_kind, fn, rolled in (
+        (2, classical.increment, +1),
+        (3, classical.decrement, -1),
+    ):
+        np.testing.assert_allclose(shift_matrix(n, variant_kind) @ u, fn(u), atol=TOL)
+        np.testing.assert_allclose(fn(u), np.roll(u, rolled), atol=0)
+    # and the other direction is wrong, so a swapped name would fail loudly
+    wrong = shift_matrix(n, 2) @ u - classical.decrement(u)
+    assert np.max(np.abs(wrong)) > 1e-3

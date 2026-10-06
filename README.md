@@ -152,12 +152,14 @@ hardware-native; native counts for a given device come with the hardware runs.
 (`tests/test_readme.py` recomputes this table from the code.)
 
 Variational solver, hardware version of the cost `C = 1 - <psi|b>**2 / ||b||**2`:
-`I + dt L` is a combination of the unitary cyclic shifts `S+`, `S-` and the identity,
-so each overlap `<psi(theta)| V |psi_prev>` with `V` in `{I, S+, S-}` is one
+`I + dt L` is a combination of the unitary cyclic shifts `decrement`, `increment` and
+the identity (`np.roll(u, -1)` and `np.roll(u, +1)`), so each overlap
+`<psi(theta)| V |psi_prev>` with `V` in `{I, decrement, increment}` is one
 Hadamard-test circuit (all amplitudes are real, so one circuit per overlap).
 
 - **3 distinct overlap circuits per cost evaluation.**
-- 2 further circuits per step (`<S+>` and `<S+**2>` on the previous state) for
+- 2 further circuits per step (`<decrement>` and `<decrement**2>` on the previous
+  state) for
   `||b||**2`, independent of `theta`.
 - A finite-difference gradient costs `P + 1` cost evaluations, `P = n (depth + 1)`.
 - The shifts are the spectral circuit above with the `"negative"` convention.

@@ -26,8 +26,8 @@ class LCUPlan:
     """Coefficients and kernel arguments for one explicit-Euler step."""
 
     a0: float
-    a_dec: float  # coefficient of the decrement (CP4's S+), r - s
-    a_inc: float  # coefficient of the increment (CP4's S-), r + s
+    a_dec: float  # coefficient of the decrement (u_{j+1}), r - s
+    a_inc: float  # coefficient of the increment (u_{j-1}), r + s
     lam: float  # sum of |coefficients|
     prep: list[float]  # [theta_h, theta_0]
     neg: list[int]  # [a_dec < 0, a_inc < 0]

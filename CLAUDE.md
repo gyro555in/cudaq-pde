@@ -125,10 +125,17 @@ ruff check . && ruff format --check .
   n >= 3 and n-2 ancilla qubits in that lowering.
 
 ## Variational advection-diffusion (solvers/variational*.py)
+- Shift names (one vocabulary everywhere, defined by numpy and pinned by
+  `tests/test_shift_definitions.py`): `classical.increment(u) = np.roll(u, +1)`,
+  i.e. `(increment u)_j = u_{j-1}`, on basis states `|j> -> |j+1>`;
+  `classical.decrement(u) = np.roll(u, -1)`, `(decrement u)_j = u_{j+1}`,
+  `|j> -> |j-1>`. The CUDA-Q kernels in `shift_kernels.py` use the same names and
+  are tested against these functions. Do not introduce S+/S- again.
 - Reference: `classical.evolve_fd_euler` is explicit Euler on the periodic
-  central-difference operator, `I + dt L = a0 I + a+ S+ + a- S-` with the cyclic
-  shifts `(S+ u)_j = u_{j+1}`, `a0 = 1-2r`, `a+- = r -+ s`, `r = nu dt/h^2`,
-  `s = c dt/(2h)`. The variational solver is validated against THIS (isolates
+  central-difference operator, `I + dt L = a0 I + a_dec * decrement + a_inc *
+  increment` with `a0 = 1-2r`, `a_dec = r-s` (weight of `u_{j+1}`),
+  `a_inc = r+s` (weight of `u_{j-1}`), `r = nu dt/h^2`,
+  `s = c dt/(2h)`; `fd_euler_coefficients` returns `(a0, a_dec, a_inc)`. The variational solver is validated against THIS (isolates
   optimization error); FD-Euler vs `evolve_spectral` is the discretization error
   and is reported separately.
 - Stability is asserted (`check_fd_euler_stable`, exact discrete amplification):
@@ -150,14 +157,36 @@ ruff check . && ruff format --check .
   (n = 4: ~800 to 1500 per step, ~2800 for the initial fit).
 - `variational.simulator_cost_and_state` is the only `cudaq.get_state` call
   (SIMULATOR-ONLY). Hardware version: Hadamard tests on `U_theta^dagger V U_prev`
-  with `V in {I, S+, S-}`: 3 distinct overlap circuits per cost evaluation, plus 2
-  per step (`<S+>`, `<S+^2>`) for `||b||^2`; a finite-difference gradient costs
+  with `V in {I, decrement, increment}`: 3 distinct overlap circuits per cost
+  evaluation, plus 2 per step (`<decrement>`, `<decrement^2>`) for `||b||^2`; a finite-difference gradient costs
   `P + 1` evaluations. The shifts are the CP3 spectral circuit with the "negative"
   Nyquist convention.
 - Global error obeys `phi_s <= arcsin(kappa sin phi_{s-1}) + arcsin(sqrt(C_s))`
   with `kappa = max|g|/min|g|` of `I + dt L`. kappa is not near 1 (1.15 for
   n = 3, 2.08 for n = 4: the highest mode is damped most), so the bound is
   valid but loose.
+
+## Shifts and LCU target preparation (solvers/shift_kernels.py, lcu*.py)
+- `increment_*` / `decrement_*` kernels in three forms, tested on every basis state
+  for n = 2..6: `qft` (QFT sandwich with the "negative" convention, no ancilla,
+  `2n(n-1)` lowered CX), `mcx` (multi-controlled X cascade, no source ancilla but the
+  compiler adds some from n = 4), `ladder` (`n-2` explicit ancillas, Toffoli and CX
+  only, `13n-25` lowered CX).
+- CUDA-Q 0.16 kernels cannot mix one qubit and a qview as control operands, and qviews
+  are sliced with Python syntax (`q[a:b]`), not `.slice`. An ancilla-controlled MCX
+  cascade therefore needs a Toffoli ladder with `n-1` work ancillas.
+- LCU: `I + dt L = a0 I + a_dec * decrement + a_inc * increment` with 2 ancilla qubits
+  (slot `00` identity, `a0 = 1` decrement, `a1 = 1` increment, slot `11` unused);
+  PREPARE = RY + controlled RY, signs of negative coefficients are a Z on the matching
+  ancilla (a_dec can be negative while explicit Euler is stable), SELECT = QFT sandwich
+  (`QFT (c-D_dec c-D_inc) QFT-dagger`, `n^2 + n` cr1) or the Toffoli ladder, post-select
+  ancillas on `|00>`. Success probability `||b||^2 / lambda^2`, `lambda = sum |c_i|`
+  (equals 1 when all coefficients are >= 0). Verified against `evolve_fd_euler` to 1e-12.
+- LCU block lowered CX (`benchmarks/measurable_resources.py`): QFT SELECT
+  `2(n^2+n)+4`, ladder SELECT `24(n-1)+2n+4` with `n-1` extra ancillas; the ladder only
+  wins from n = 11.
+- Hardware-path modules never call `cudaq.get_state`; statevector checks are in tests
+  and labelled STATEVECTOR CHECK.
 
 ## Hardware portability rule
 - Solvers intended for QPUs are gate-level @cudaq.kernel code

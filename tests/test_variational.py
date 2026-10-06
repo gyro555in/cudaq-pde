@@ -112,24 +112,32 @@ def test_fd_target_matches_dense_operator(n: int) -> None:
 def test_shift_decomposition_of_overlap_and_norm(n: int) -> None:
     """Everything the hardware cost needs: 3 overlaps + 2 per-step expectations."""
     N = 2**n
-    s_plus = np.roll(np.eye(N), 1, axis=1)  # (S+ u)_j = u_{j+1}
-    s_minus = s_plus.T
-    np.testing.assert_array_equal(s_plus @ s_minus, np.eye(N))  # unitary
+    # matrices of the numpy-defined shifts: dec @ u == classical.decrement(u)
+    dec = np.array([classical.decrement(e) for e in np.eye(N)]).T
+    inc = np.array([classical.increment(e) for e in np.eye(N)]).T
+    np.testing.assert_array_equal(dec @ inc, np.eye(N))  # unitary, inverse pair
+    np.testing.assert_array_equal(inc, dec.T)
     psi_prev, psi = _random_state(n, 1), _random_state(n, 2)
-    a0, ap, am = classical.fd_euler_coefficients(n, DT, C_ADV, NU, L)
+    a0, a_dec, a_inc = classical.fd_euler_coefficients(n, DT, C_ADV, NU, L)
     b = V.fd_target(psi_prev, DT, C_ADV, NU, L)
 
     overlap = (
         a0 * psi @ psi_prev
-        + ap * psi @ s_plus @ psi_prev
-        + am * psi @ s_minus @ psi_prev
+        + a_dec * psi @ dec @ psi_prev
+        + a_inc * psi @ inc @ psi_prev
     )
     assert overlap == pytest.approx(psi @ b, abs=1e-14)
 
-    e1 = psi_prev @ s_plus @ psi_prev  # <S+> (equals <S->)
-    e2 = psi_prev @ s_plus @ s_plus @ psi_prev  # <S+^2> (equals <S-^2>)
-    assert e1 == pytest.approx(psi_prev @ s_minus @ psi_prev, abs=1e-14)
-    norm_sq = a0**2 + ap**2 + am**2 + 2 * a0 * (ap + am) * e1 + 2 * ap * am * e2
+    e1 = psi_prev @ dec @ psi_prev  # <decrement> (equals <increment>)
+    e2 = psi_prev @ dec @ dec @ psi_prev  # <decrement^2> (equals <increment^2>)
+    assert e1 == pytest.approx(psi_prev @ inc @ psi_prev, abs=1e-14)
+    norm_sq = (
+        a0**2
+        + a_dec**2
+        + a_inc**2
+        + 2 * a0 * (a_dec + a_inc) * e1
+        + 2 * a_dec * a_inc * e2
+    )
     assert norm_sq == pytest.approx(b @ b, abs=1e-14)
 
     cost_dense = 1.0 - (psi @ b) ** 2 / (b @ b)
@@ -194,9 +202,9 @@ def test_global_error_obeys_angle_accumulation_bound(n: int) -> None:
     # highest-frequency mode is damped by |1 - 2a| (0.74 for n = 3, 0.48 for
     # n = 4), so kappa = 1.35 and 2.08. The bound below is valid but loose;
     # smooth fields do not excite that mode.
-    a0, ap, am = classical.fd_euler_coefficients(n, DT, C_ADV, NU, L)
+    a0, a_dec, a_inc = classical.fd_euler_coefficients(n, DT, C_ADV, NU, L)
     theta = 2 * np.pi * np.arange(2**n) / 2**n
-    g = np.abs(a0 + ap * np.exp(1j * theta) + am * np.exp(-1j * theta))
+    g = np.abs(a0 + a_dec * np.exp(1j * theta) + a_inc * np.exp(-1j * theta))
     assert kappa == pytest.approx(g.max() / g.min(), rel=1e-9)
     print(f"n={n}: kappa(I + dt L) = {kappa:.3f}")
     bound = np.arcsin(np.sqrt(res.costs[0]))

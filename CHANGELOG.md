@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Cyclic shift kernels `increment` / `decrement` (QFT, multi-controlled X, and
+  explicit-ancilla forms) and LCU preparation of `(I + dt L)|psi>` with
+  post-selection, with resource tables (`benchmarks/measurable_resources.py`).
+
+### Changed
+- One vocabulary for the cyclic shifts everywhere: `classical.increment` and
+  `classical.decrement` (defined as `np.roll(u, +1)` and `np.roll(u, -1)`) replace
+  the `S+` / `S-` notation in code and docs. `fd_euler_coefficients` returns the
+  same numbers in the same order, now named `(a0, a_dec, a_inc)`.
+
 ## [0.1.0] - unreleased
 
 The release date is to be filled in when the version is tagged.

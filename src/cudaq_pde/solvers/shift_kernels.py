@@ -1,18 +1,20 @@
 """Cyclic shift kernels on ``N = 2**n`` basis states (qubit 0 is the LSB).
 
-Names describe the action on computational basis states:
+Names describe the action on computational basis states and are defined by numpy:
 
-* ``increment``: ``|j> -> |j + 1 mod N>``
-* ``decrement``: ``|j> -> |j - 1 mod N>`` (the inverse)
+* ``increment``: ``|j> -> |j + 1 mod N>``, the matrix of ``np.roll(u, +1)``
+  (:func:`cudaq_pde.classical.increment`)
+* ``decrement``: ``|j> -> |j - 1 mod N>``, the matrix of ``np.roll(u, -1)``
+  (:func:`cudaq_pde.classical.decrement`), the inverse of ``increment``
 
-In the finite-difference notation of :mod:`cudaq_pde.classical`,
-``(S+ u)_j = u_{j+1}`` acts on basis states as ``|j> -> |j - 1>``, so CP4's ``S+`` is
-``decrement`` and CP4's ``S-`` is ``increment``. Three implementations:
+The finite-difference code, the LCU preparation and these kernels all use this one
+vocabulary; the tests compare the kernels with ``classical.increment`` and
+``classical.decrement`` on every basis state. Three implementations:
 
 ``*_qft``
-    ``QFT D QFT-dagger`` with the spectral circuit of :mod:`spectral_kernels`
-    (phases ``exp(-+ 2 pi i k / N)``, "negative" Nyquist convention, which is
-    exact for a permutation). No ancilla.
+    ``QFT (diagonal phases) QFT-dagger`` with the spectral circuit of
+    :mod:`spectral_kernels` (phases ``exp(-+ 2 pi i k / N)``, "negative" Nyquist
+    convention, which is exact for a permutation). No ancilla.
 ``*_mcx``
     Cascade of multi-controlled X: bit ``i`` flips iff all lower bits are 1,
     applied from the top bit down. No ancilla in the source (the compiler may add
