@@ -80,4 +80,8 @@ ground truth for every test.
 - Small modules, no premature abstraction. Ask before adding dependencies.
 - Don't invent CUDA-Q APIs: check the installed version's docs/signatures
   (help(), inspect) when unsure, and say so.
+- All `@cudaq.kernel` functions live in dedicated `*_kernels.py` modules.
+  Kernel gate names (h, cx, ...) look undefined to ruff, so F821 is ignored
+  per file only for `*_kernels.py` via `[tool.ruff.lint.per-file-ignores]`
+  in pyproject.toml. Do not ignore F821 anywhere else.
 - Writing style in docs/README: no em dashes.
