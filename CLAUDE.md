@@ -21,6 +21,10 @@ after my approval.
   unset (login node); inside a Slurm job the defaults are kept. Unit tests and
   the resource table run on the login node; anything heavier (large sweeps,
   GPU tests, benchmarks) runs via sbatch from the repo root.
+- CUDA-Q runtime threads spin across all cores even with `OMP_NUM_THREADS=1`
+  (measured: 3.8 s CPU for 0.5 s of work). Run login-node tests and scripts
+  pinned to one core, e.g. `taskset -c 0 pytest`, which makes CPU time equal
+  wall time (0.4 s CPU for the same work).
 
 ### Activation (ROSI)
 ```bash
@@ -42,12 +46,13 @@ ruff check . && ruff format --check .
 
 ### Layout
 - `src/cudaq_pde/`: `classical.py`, `encoding.py`, `encoding_kernels.py`,
-  `metadata.py`, `solvers/` (`spectral.py` driver, `spectral_kernels.py`
-  kernels, `spectral_resources.py` gate counts)
+  `metadata.py`, `solvers/` (`spectral*.py`: gate-level advection;
+  `variational.py` driver and `variational_kernels.py` ansatz: advection-diffusion)
 - `tests/`, `examples/`, `benchmarks/`, `logs/` (sbatch output, gitignored)
 - `env/`: activation script, lock file, one-off environment checks (excluded from ruff)
 - Submit sbatch jobs from the repo root, output goes to `logs/%x_%j.out`.
 - `benchmarks/spectral_resources.py` prints the resource table;
+  `benchmarks/variational_report.py` prints the variational accuracy tables;
   `benchmarks/gpu_tests.sbatch` runs `pytest --run-gpu -m gpu` on one A100.
 
 ### Verified
@@ -108,6 +113,41 @@ ruff check . && ruff format --check .
   n-1 controls. Lowered CX (CUDA-Q OpenQASM 2 lowering, not hardware-native):
   2n(n-1) for "negative" (cr1 = 2 CX, swap = 3 CX); "zero" adds 12n-22 CX for
   n >= 3 and n-2 ancilla qubits in that lowering.
+
+## Variational advection-diffusion (solvers/variational*.py)
+- Reference: `classical.evolve_fd_euler` is explicit Euler on the periodic
+  central-difference operator, `I + dt L = a0 I + a+ S+ + a- S-` with the cyclic
+  shifts `(S+ u)_j = u_{j+1}`, `a0 = 1-2r`, `a+- = r -+ s`, `r = nu dt/h^2`,
+  `s = c dt/(2h)`. The variational solver is validated against THIS (isolates
+  optimization error); FD-Euler vs `evolve_spectral` is the discretization error
+  and is reported separately.
+- Stability is asserted (`check_fd_euler_stable`, exact discrete amplification):
+  `dt <= min(2 nu/c^2, h^2/(2 nu))` is a sufficient closed form. `nu = 0` has no
+  stable explicit step, so CP4 needs `nu > 0`.
+- Per step `b = (I + dt L) psi_prev` (unnormalized) and
+  `C(theta) = 1 - <psi|b>^2/||b||^2`, the infidelity to `b/||b||`. Norm tracking:
+  `norm_new = norm_prev * <psi(theta*)|b>`. The norm is SIGNED: C is invariant
+  under `psi -> -psi` (global phase) and the optimizer may land on either sign
+  (observed negative for n = 4), so the sign is part of the classical scalar and
+  `norm * psi` is the correct field.
+- Ansatz: RY layer then `depth` x (CX ladder, RY layer), `n(depth+1)` angles, real
+  amplitudes. Needed depth for the smooth test field: n = 3 depth 2, n = 4
+  depth 3 (observed infidelity 1e-12 and 1e-9; depth 1 stalls at 3e-3 and 8e-3).
+- Optimizer: L-BFGS-B with finite-difference gradients (default; `tol` is the
+  projected-gradient tolerance, reaching `C ~ tol^2`, floor at the 1e-8 finite
+  difference step) or COBYLA (hits `maxiter` and stalls near 1e-4 here, so much
+  weaker). Seeded init, warm start, deterministic. `nfev` per step is reported
+  (n = 4: ~800 to 1500 per step, ~2800 for the initial fit).
+- `variational.simulator_cost_and_state` is the only `cudaq.get_state` call
+  (SIMULATOR-ONLY). Hardware version: Hadamard tests on `U_theta^dagger V U_prev`
+  with `V in {I, S+, S-}`: 3 distinct overlap circuits per cost evaluation, plus 2
+  per step (`<S+>`, `<S+^2>`) for `||b||^2`; a finite-difference gradient costs
+  `P + 1` evaluations. The shifts are the CP3 spectral circuit with the "negative"
+  Nyquist convention.
+- Global error obeys `phi_s <= arcsin(kappa sin phi_{s-1}) + arcsin(sqrt(C_s))`
+  with `kappa = max|g|/min|g|` of `I + dt L`. kappa is not near 1 (1.15 for
+  n = 3, 2.08 for n = 4: the highest mode is damped most), so the bound is
+  valid but loose.
 
 ## Hardware portability rule
 - Solvers intended for QPUs are gate-level @cudaq.kernel code
