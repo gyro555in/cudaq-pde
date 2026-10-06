@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+title: "cudaq-pde: gate-level quantum PDE solvers on CUDA-Q"
+version: 0.1.0
+type: software
+authors:
+  - family-names: Ramakrishna
+    given-names: Kushal
+    affiliation: "Helmholtz-Zentrum Dresden-Rossendorf (HZDR)"
+repository-code: "https://github.com/gyro555in/cudaq-pde"
+abstract: >-
+  Gate-level, hardware-portable reference implementations of quantum PDE
+  solvers on CUDA-Q: spectral advection with the quantum Fourier transform and
+  variational advection-diffusion, validated against exact classical solutions,
+  with resource accounting. Not a claim of quantum advantage.
+keywords:
+  - quantum computing
+  - CUDA-Q
+  - partial differential equations
+  - quantum Fourier transform
+# To add at release time: date-released, license, and identifiers such as an
+# ORCID or a DOI. They are not set here because they are not decided yet.
