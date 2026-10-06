@@ -23,11 +23,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Virtual environments (if accidentally committed)
+# Virtual environments (the real one lives outside the repo)
 venv/
-env/
-ENV/
-env.bak/
+.venv/
 venv.bak/
 
 # pip cache
