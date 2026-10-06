@@ -156,3 +156,121 @@ def evolve_spectral(
     if nyquist == "zero" and not np.iscomplexobj(u0):
         return u.real
     return u
+
+
+def fd_euler_coefficients(
+    n: int, dt: float, c: float, nu: float, L: float = TWO_PI
+) -> tuple[float, float, float]:
+    """Coefficients of ``I + dt*Lfd`` as ``a0 I + a_plus S+ + a_minus S-``.
+
+    ``Lfd = -c (S+ - S-)/(2h) + nu (S+ - 2 I + S-)/h^2`` is the periodic
+    central-difference operator on ``N = 2**n`` points, ``h = L/N``, with the
+    cyclic shifts ``(S+ u)_j = u_{j+1}`` and ``S- = S+^T``. With
+    ``r = nu dt / h^2`` and ``s = c dt / (2 h)``:
+    ``a0 = 1 - 2r``, ``a_plus = r - s``, ``a_minus = r + s``.
+    """
+    if n < 1:
+        raise ValueError(f"n must be >= 1, got {n}")
+    h = L / 2**n
+    r = nu * dt / h**2
+    s = c * dt / (2.0 * h)
+    return 1.0 - 2.0 * r, r - s, r + s
+
+
+def fd_euler_amplification(
+    n: int, dt: float, c: float, nu: float, L: float = TWO_PI
+) -> float:
+    """Largest Euler amplification ``max_m |g_m|`` over the N Fourier modes.
+
+    Mode ``e^{i j theta}`` with ``theta = 2 pi m / N`` has
+    ``g = a0 + a_plus e^{i theta} + a_minus e^{-i theta}``. Explicit Euler is
+    stable (no growing mode) iff this is <= 1.
+    """
+    a0, ap, am = fd_euler_coefficients(n, dt, c, nu, L)
+    theta = TWO_PI * np.arange(2**n) / 2**n
+    g = a0 + ap * np.exp(1j * theta) + am * np.exp(-1j * theta)
+    return float(np.max(np.abs(g)))
+
+
+def fd_euler_dt_max(n: int, c: float, nu: float, L: float = TWO_PI) -> float:
+    """Largest stable explicit-Euler step for central-difference advection-diffusion.
+
+    For a continuum of wavenumbers ``|g| <= 1`` iff ``b^2 <= a <= 1`` with
+    ``a = 2 nu dt / h^2`` and ``b = c dt / h``, i.e.
+    ``dt <= min(2 nu / c^2, h^2 / (2 nu))``. This is returned. It is stable on
+    every grid; the ``h^2 / (2 nu)`` part is exact for even N, while on a finite
+    grid the ``2 nu / c^2`` part is slightly conservative (the smallest discrete
+    wavenumber is not 0). :func:`check_fd_euler_stable`, which the solvers use,
+    tests the exact discrete amplification instead. For ``nu = 0`` no step is
+    stable (central differences with Euler always grow), and 0.0 is returned.
+    """
+    if nu <= 0.0:
+        return 0.0
+    h = L / 2**n
+    limit = h**2 / (2.0 * nu)
+    if c != 0.0:
+        limit = min(limit, 2.0 * nu / c**2)
+    return limit
+
+
+STABILITY_TOL = 1e-12
+
+
+def check_fd_euler_stable(
+    n: int, dt: float, c: float, nu: float, L: float = TWO_PI
+) -> None:
+    """Raise ``ValueError`` if explicit Euler would amplify any mode."""
+    if dt <= 0.0:
+        raise ValueError(f"dt must be > 0, got {dt}")
+    if nu < 0.0:
+        raise ValueError(f"nu must be >= 0, got {nu}")
+    amp = fd_euler_amplification(n, dt, c, nu, L)
+    if amp > 1.0 + STABILITY_TOL:
+        raise ValueError(
+            f"explicit Euler unstable: max amplification {amp:.6f} > 1 "
+            f"(dt={dt}, dt_max={fd_euler_dt_max(n, c, nu, L):.6g}; "
+            "nu = 0 has no stable step)"
+        )
+
+
+def evolve_fd_euler(
+    u0: NDArray[np.floating],
+    dt: float,
+    steps: int,
+    c: float,
+    nu: float,
+    L: float = TWO_PI,
+) -> NDArray[np.float64]:
+    """Explicit Euler on the periodic central-difference operator.
+
+    ``u^{s+1} = (I + dt Lfd) u^s``, see :func:`fd_euler_coefficients`. This is
+    the validation target of the variational solver: it contains the spatial
+    and time discretization error of the scheme but no optimization error.
+    Compare with :func:`evolve_spectral` to measure the discretization error.
+
+    Returns
+    -------
+    ndarray, shape (steps + 1, N)
+        Row ``s`` is the field after ``s`` steps (row 0 is ``u0``).
+
+    Raises
+    ------
+    ValueError
+        If the step violates the explicit-Euler stability limit.
+    """
+    u0 = np.asarray(u0, dtype=np.float64)
+    if u0.ndim != 1:
+        raise ValueError("u0 must be one-dimensional")
+    if not np.all(np.isfinite(u0)):
+        raise ValueError("u0 must be finite")
+    if steps < 0:
+        raise ValueError(f"steps must be >= 0, got {steps}")
+    n = _check_size(u0.size)
+    check_fd_euler_stable(n, dt, c, nu, L)
+    a0, ap, am = fd_euler_coefficients(n, dt, c, nu, L)
+    out = np.empty((steps + 1, u0.size))
+    out[0] = u0
+    for s in range(steps):
+        u = out[s]
+        out[s + 1] = a0 * u + ap * np.roll(u, -1) + am * np.roll(u, 1)
+    return out
