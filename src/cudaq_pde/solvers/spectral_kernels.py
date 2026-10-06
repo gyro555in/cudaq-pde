@@ -132,3 +132,21 @@ def spectral_advection(
     """Load ``amps`` and apply :func:`spectral_advection_on`."""
     q = cudaq.qvector(amps)
     spectral_advection_on(q, angles, phi, zero, swaps, steps)
+
+
+@cudaq.kernel
+def spectral_advection_circuit(
+    n: int,
+    angles: list[float],
+    phi: float,
+    zero: bool,
+    swaps: bool,
+    steps: int,
+):
+    """The evolution circuit alone on ``n`` qubits (no state preparation).
+
+    Used for resource counting: loading data is a separate, exponentially
+    expensive step.
+    """
+    q = cudaq.qvector(n)
+    spectral_advection_on(q, angles, phi, zero, swaps, steps)
