@@ -155,3 +155,16 @@ def lcu_target(
     q = cudaq.qvector(n + 2 + n_work)
     hea_ry_on(q.front(n), theta_prev, depth)
     lcu_block(q, n, prep, neg, select_kind)
+
+
+@cudaq.kernel
+def lcu_block_circuit(
+    n: int,
+    prep: list[float],
+    neg: list[int],
+    select_kind: int,
+    n_work: int,
+):
+    """The LCU block alone on fresh qubits (resource counting, no ansatz)."""
+    q = cudaq.qvector(n + 2 + n_work)
+    lcu_block(q, n, prep, neg, select_kind)

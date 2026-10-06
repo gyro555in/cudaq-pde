@@ -123,3 +123,26 @@ def decrement_ladder(q: cudaq.qview, work: cudaq.qview):
             i = n - 1 - k
             x.ctrl(work[i - 3], q[i - 1], work[i - 2])
         x.ctrl(q[0], q[1], work[0])
+
+
+@cudaq.kernel
+def shift_circuit(n: int, m: int, kind: int):
+    """One shift on ``n`` fresh qubits plus ``m`` work qubits (resource counting).
+
+    ``kind``: 0/1 increment/decrement QFT, 2/3 MCX cascade, 4/5 ancilla ladder.
+    """
+    q = cudaq.qvector(n + m)
+    sys = q.front(n)
+    work = q.back(m)
+    if kind == 0:
+        increment_qft(sys)
+    if kind == 1:
+        decrement_qft(sys)
+    if kind == 2:
+        increment_mcx(sys)
+    if kind == 3:
+        decrement_mcx(sys)
+    if kind == 4:
+        increment_ladder(sys, work)
+    if kind == 5:
+        decrement_ladder(sys, work)
