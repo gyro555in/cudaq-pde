@@ -27,6 +27,19 @@ source /bigdata/rz/ramakr74/cudaq_pde/env/activate_rosi.sh
 Loads python/3.12.4 module, sets PIP_CACHE_DIR, activates venv at `/bigdata/rz/ramakr74/venvs/cudaq-pde`.
 Do NOT load any CUDA module; CUDA-Q wheels bring their own runtime.
 
+### Install and test
+```bash
+pip install -e ".[cu12,dev]"   # or [cu13,dev]; install exactly one CUDA-Q variant
+pytest                          # CPU (qpp-cpu); add --run-gpu only on a GPU node
+ruff check . && ruff format --check .
+```
+
+### Layout
+- `src/cudaq_pde/`: `classical.py`, `encoding.py`, `metadata.py`, `solvers/`
+- `tests/`, `examples/`, `benchmarks/`, `logs/` (sbatch output, gitignored)
+- `env/`: activation script, lock file, one-off environment checks (excluded from ruff)
+- Submit sbatch jobs from the repo root, output goes to `logs/%x_%j.out`.
+
 ### Verified
 - A100 GPU (driver 570.158.01): nvidia fp64 target verified to 1e-12 agreement with CPU.
 - See `env/ENVIRONMENT.md` for full details: system, hardware, dependencies, job template.
