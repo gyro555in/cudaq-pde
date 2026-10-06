@@ -107,7 +107,7 @@ For GPU jobs, use:
 #SBATCH --output=logs/%x_%j.out
 ```
 
-Submit from the repo root; logs/ must exist (it is gitignored): `mkdir -p logs`.
+Submit from the repo root.
 
 Before submitting, activate the environment:
 ```bash

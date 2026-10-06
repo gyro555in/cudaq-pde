@@ -50,7 +50,8 @@ slurm-*.err
 
 # Logs
 *.log
-logs/
+logs/*
+!logs/.gitkeep
 
 # Results and benchmarks
 results/
