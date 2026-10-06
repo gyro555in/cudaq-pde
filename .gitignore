@@ -50,6 +50,7 @@ slurm-*.err
 
 # Logs
 *.log
+logs/
 
 # Results and benchmarks
 results/

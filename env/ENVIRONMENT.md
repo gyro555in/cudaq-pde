@@ -104,7 +104,10 @@ For GPU jobs, use:
 #SBATCH --account=rz
 #SBATCH --gpus=1
 #SBATCH --time=15
+#SBATCH --output=logs/%x_%j.out
 ```
+
+Submit from the repo root; logs/ must exist (it is gitignored): `mkdir -p logs`.
 
 Before submitting, activate the environment:
 ```bash
