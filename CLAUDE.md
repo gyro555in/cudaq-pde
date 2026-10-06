@@ -65,8 +65,11 @@ ruff check . && ruff format --check .
   this convention.
 - Wavenumbers: `classical.wavenumbers(n, L)` gives k in FFT array order
   (0, 1, ..., N/2-1, -N/2, ..., -1 times 2 pi / L). The Nyquist mode is
-  m = -N/2. `evolve_spectral(..., real=False)` keeps the complex result so a
-  circuit can be compared with the same convention.
+  m = -N/2. `evolve_spectral(..., nyquist=...)` fixes the Nyquist convention:
+  "zero" (default) uses k = 0 for odd derivatives and k^2 = (pi N / L)^2 for
+  diffusion, so real data stays real; "negative" uses k = -N/2, which is what
+  a per-qubit phase circuit applies. Both are unitary for nu = 0. See the
+  `classical.py` module docstring.
 
 ## Hardware portability rule
 - Solvers intended for QPUs are gate-level @cudaq.kernel code
