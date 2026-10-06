@@ -28,6 +28,7 @@ markers = ["gpu: needs a GPU target; skipped unless --run-gpu is given"]
 target-version = "py311"
 line-length = 88
 src = ["src", "tests"]
+extend-exclude = ["env"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
