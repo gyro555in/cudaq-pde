@@ -4,7 +4,7 @@
 #SBATCH --time=15
 #SBATCH --account=rz
 #SBATCH --job-name=cudaq-gpu-check
-#SBATCH --output=gpu_check_%j.log
+#SBATCH --output=logs/%x_%j.out
 
 # GPU verification script for CUDA-Q on ROSI A100
 

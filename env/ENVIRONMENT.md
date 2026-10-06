@@ -37,6 +37,14 @@
 - Only the GPU driver matters for target selection.
 - The activation script (`activate_rosi.sh`) loads only `python/3.12.4`.
 
+**Runtime vs driver:** the bundled CUDA runtime is 12.9.79
+(`nvidia-cuda-runtime-cu12`). The ROSI A100 driver 570.158.01 natively
+supports up to CUDA 12.8 (`nvidia-smi` header). The newer runtime works through
+CUDA minor-version compatibility within the 12.x series. Verified on the A100
+with job 601192 (nvidia fp64 target, GHZ agreement with qpp-cpu to 1e-12).
+`collect_metadata()` records both `cuda_runtime` (12.9.79) and
+`driver_max_cuda` (12.8) so they are never confused.
+
 ## Hardware
 
 ### Login Node (rosi4)
@@ -104,7 +112,10 @@ For GPU jobs, use:
 #SBATCH --account=rz
 #SBATCH --gpus=1
 #SBATCH --time=15
+#SBATCH --output=logs/%x_%j.out
 ```
+
+Submit from the repo root.
 
 Before submitting, activate the environment:
 ```bash
