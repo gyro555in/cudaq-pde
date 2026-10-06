@@ -24,6 +24,24 @@ conventions are supported, both exactly unitary when ``nu = 0``:
     general becomes complex whenever the Nyquist component is nonzero.
 
 The two conventions agree exactly on data with no Nyquist content.
+
+Wavenumber layout
+-----------------
+Array index ``j`` of the FFT carries integer mode ``m(j) = j`` for
+``j < N/2`` and ``m(j) = j - N`` for ``j >= N/2``, so the Nyquist mode sits at
+``j = N/2`` with ``m = -N/2``. The wavenumber is ``k = 2 pi m / L``. With
+CUDA-Q qubit 0 as the least significant bit this index ``j`` is the
+computational basis state ``|j>``.
+
+No real-part projection
+-----------------------
+An earlier version returned the real part of the result for real input. That
+is a non-unitary step a circuit cannot perform, so a reference containing it
+cannot be matched by a unitary kernel. The reference now applies only the
+diagonal phase/decay factor in Fourier space. For ``"zero"`` with real input
+the result is exactly real by symmetry (the cast to float64 drops an imaginary
+part of order 1e-17 that is round-off, verified in the tests), not a
+projection of a genuinely complex result.
 """
 
 from __future__ import annotations
@@ -119,7 +137,8 @@ def evolve_spectral(
     -------
     ndarray, shape (2**n,)
         ``u(x_j, t)``. Real (float64) if ``u0`` is real and
-        ``nyquist == "zero"``; otherwise complex128 (with ``"negative"`` real
+        ``nyquist == "zero"`` (exactly real by Hermitian symmetry, the cast
+        only drops round-off); otherwise complex128 (with ``"negative"`` real
         data generally becomes complex).
     """
     u0 = np.asarray(u0)

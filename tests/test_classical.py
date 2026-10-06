@@ -64,7 +64,7 @@ def test_mean_conserved(nyquist: str) -> None:
 
 @pytest.mark.parametrize("complex_valued", [False, True])
 @pytest.mark.parametrize("L", [classical.TWO_PI, 3.7])
-@pytest.mark.parametrize("n", [3, 4, 5])
+@pytest.mark.parametrize("n", [2, 3, 4, 5, 6])
 @pytest.mark.parametrize("nyquist", CONVENTIONS)
 def test_unitary_without_diffusion(
     nyquist: str, n: int, L: float, complex_valued: bool
@@ -75,7 +75,7 @@ def test_unitary_without_diffusion(
 
 
 @pytest.mark.parametrize("complex_valued", [False, True])
-@pytest.mark.parametrize("n", [3, 4, 5])
+@pytest.mark.parametrize("n", [2, 3, 4, 5, 6])
 @pytest.mark.parametrize("nyquist", CONVENTIONS)
 def test_reversible_without_diffusion(
     nyquist: str, n: int, complex_valued: bool
@@ -86,7 +86,7 @@ def test_reversible_without_diffusion(
     np.testing.assert_allclose(back, u0, atol=TOL)
 
 
-@pytest.mark.parametrize("n", [3, 4, 5])
+@pytest.mark.parametrize("n", [2, 3, 4, 5, 6])
 def test_zero_convention_real_input_stays_real(n: int) -> None:
     u0 = _generic(n, 30 + n)
     out = classical.evolve_spectral(u0, 1.9, 0.8, 0.03, nyquist="zero")
@@ -171,3 +171,19 @@ def test_rejects_bad_input() -> None:
         classical.evolve_spectral(np.ones((4, 4)), 0.1, 1.0)
     with pytest.raises(ValueError):
         classical.evolve_spectral(np.ones(8), 0.1, 1.0, nyquist="positive")
+
+
+@pytest.mark.parametrize("L", [classical.TWO_PI, 3.7])
+@pytest.mark.parametrize("n", [2, 3, 4, 5])
+@pytest.mark.parametrize("nyquist", CONVENTIONS)
+def test_every_mode_incl_nyquist_analytic(nyquist: str, n: int, L: float) -> None:
+    """Each Fourier mode gets exp(-i c k t - nu k^2 t); oracle uses integers m."""
+    N, c, nu, t = 2**n, 0.8, 0.04, 0.37
+    x = classical.grid(n, L)
+    for m in range(-N // 2, N // 2):  # includes the Nyquist mode m = -N/2
+        k = 2 * np.pi * m / L
+        k_adv = 0.0 if (nyquist == "zero" and m == -N // 2) else k
+        u0 = np.exp(1j * k * x)
+        expected = np.exp(-1j * c * k_adv * t - nu * k**2 * t) * u0
+        u = classical.evolve_spectral(u0, t, c, nu, L, nyquist=nyquist)
+        np.testing.assert_allclose(u, expected, atol=TOL)
