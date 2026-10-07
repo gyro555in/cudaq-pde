@@ -347,3 +347,70 @@ def oneshot_c_circuit(
         l_alpha,
         l_ctl,
     )
+
+
+# ------------------------------------------------- gate-loaded variants (portable)
+
+
+@cudaq.kernel
+def oneshot_b1_run_loaded(
+    n: int,
+    ld_tgt: list[int],
+    ld_alpha: list[float],
+    ld_ctl: list[int],
+    angles: list[float],
+    phi: float,
+    zero: bool,
+    c1: list[int],
+    c2: list[int],
+    theta: list[float],
+) -> list[bool]:
+    """Route B1 with the real input loaded by gates (``oneshot.prepare_real``).
+
+    Same record as :func:`oneshot_b1_run`. No amplitude initialization, so it compiles
+    for targets that cannot take a state vector. Loading costs ``2**n - 1`` RY and
+    ``2**n - 2`` CX: a convenience for small ``n``, not a scalable loader.
+    """
+    sys = cudaq.qvector(n)
+    anc = cudaq.qubit()
+    ry_cx_sequence(sys, ld_tgt, ld_alpha, ld_ctl)
+    iqft_b(sys)
+    advection_on(sys, angles, phi, zero)
+    sign_fold(sys)
+    rec = [False for _ in range(len(theta) + n)]
+    for i in range(len(theta)):
+        factor_to(sys, anc, c1[i], c2[i], theta[i])
+        rec[i] = mz(anc)
+        reset(anc)
+    sign_fold(sys)
+    qft_b(sys)
+    for k in range(n):
+        rec[len(theta) + k] = mz(sys[k])
+    return rec
+
+
+@cudaq.kernel
+def oneshot_b2_measured_loaded(
+    n: int,
+    n_anc: int,
+    ld_tgt: list[int],
+    ld_alpha: list[float],
+    ld_ctl: list[int],
+    angles: list[float],
+    phi: float,
+    zero: bool,
+    c1: list[int],
+    c2: list[int],
+    theta: list[float],
+):
+    """Route B2 with gate loading, then measure system and ancillas (for ``sample``).
+
+    Bitstring character ``k`` is qubit ``k``: system qubits first, then the ancillas;
+    accept the shots whose ancilla characters are all ``0``.
+    """
+    sys = cudaq.qvector(n)
+    anc = cudaq.qvector(n_anc)
+    ry_cx_sequence(sys, ld_tgt, ld_alpha, ld_ctl)
+    oneshot_b2_on(sys, anc, angles, phi, zero, c1, c2, theta)
+    mz(sys)
+    mz(anc)
