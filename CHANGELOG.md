@@ -22,6 +22,23 @@ All notable changes to this project are documented here. The format follows
 - A `slow` pytest marker (skipped unless `--run-slow`) for tests over about 1 s; CI and
   the GPU sbatch pass it. The default login-node run drops from 125 s to 39 s of CPU.
 
+- One-shot advection-diffusion, `QFT-dagger -> advection phases -> block-encoded
+  diag(exp(-a m**2)) -> QFT` with post-selected ancillas, in three routes: multiplexed RY
+  (exact, small n), a product of `n` CRY and `n(n-1)/2` CCRY contractions on the
+  sign-magnitude register (explicit ancillas, or one ancilla with mid-circuit `mz` and
+  `reset` through `cudaq.run`), and a Gaussian real-space LCU (exponential in n at fixed
+  physical time, documented). Tests against `classical.evolve_spectral` to 1e-12,
+  success probability, sampled success probability for the mid-circuit route, negative
+  controls, resource accounting (native, lowered, constructed) and
+  `benchmarks/oneshot_resources.py`.
+- `sampling.run_records`: the single `cudaq.run` call site (per-shot records of
+  mid-circuit measurements).
+
+### Fixed
+- `spectral_resources.qasm_stats` split OpenQASM 2 text by line, but CUDA-Q 0.16 writes
+  `reset q[3];cx ...` on one line, so the gate after every reset was not counted. It now
+  splits statements on `;`.
+
 ### Changed
 - Angles and infidelities between nearly equal states are computed stably
   (`cudaq_pde.metrics`: `atan2` of the orthogonal residual) instead of `1 - F`, in the

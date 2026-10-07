@@ -52,6 +52,7 @@ ruff check . && ruff format --check .
 - `src/cudaq_pde/`: `classical.py`, `encoding.py`, `encoding_kernels.py`,
   `metadata.py`, `solvers/` (`spectral*.py`: gate-level advection;
   `variational.py` driver and `variational_kernels.py` ansatz: advection-diffusion)
+  (`oneshot*.py`: one-shot advection-diffusion, three block-encoding routes)
 - `tests/`, `examples/`, `benchmarks/`, `logs/` (sbatch output, gitignored),
   `results/` (example plots and JSON, gitignored)
 - Release files: `README.md` (snippets and resource table are checked by
@@ -199,10 +200,11 @@ ruff check . && ruff format --check .
 
 ## Measurable path (solvers/measurable*.py, sampling.py, spectral_measure.py)
 - Rules enforced by `tests/test_hardware_path_purity.py` (AST scan): hardware-path
-  modules never call `cudaq.get_state`; only `variational.py` and `spectral.py` do
-  (SIMULATOR-ONLY); `cudaq.sample` is called only in `sampling.sample_counts`, which
-  owns seeding (`Sampler`: `base_seed + circuit_index`). Statevector checks live in
-  tests and are labelled STATEVECTOR CHECK.
+  modules never call `cudaq.get_state`; only `variational.py`, `spectral.py` and
+  `oneshot_sim.py` do (SIMULATOR-ONLY); `cudaq.sample` is called only in
+  `sampling.sample_counts` and `cudaq.run` only in `sampling.run_records` (one call site
+  each), which own seeding (`Sampler`: `base_seed + circuit_index`). Statevector checks
+  live in tests and are labelled STATEVECTOR CHECK.
 - QFT shifts and the LCU SELECT reuse the CP3 `phase_layer_mirrored` (and its
   controlled twin in `spectral_kernels.py`); angles come from
   `spectral.shift_angles` (a shift is advection by one cell, c*dt = +-L/N, "negative"
@@ -228,6 +230,52 @@ ruff check . && ruff format --check .
   `k_fft = rev(r)`; `P[k] = |u_hat_k|^2/(N ||u||^2)`; advection leaves it invariant;
   error follows `sqrt((1 - sum p^2)/N)` and scales as shots^-0.51 (n = 3..8).
 
+## One-shot advection-diffusion (solvers/oneshot*.py)
+- Circuit `QFT-dagger -> advection phases (CP3) -> block-encoded diag(g) -> QFT`,
+  `g(m) = exp(-a m^2)`, `a = nu T (2 pi / L)^2`, ancillas post-selected on 0. One circuit
+  for any `T`, no explicit-Euler stability limit. `g` is even in `m`, so only the
+  advection part sees the Nyquist convention. `P_succ = sum |c_m|^2 g(m)^2 =
+  ||u(T)||^2 / ||u0||^2` (route C: divided by `lambda^2`). All routes match
+  `classical.evolve_spectral` (observed ~1e-15, asserted 1e-12), both conventions.
+- `sigma = sqrt(2 nu T) / h` grid cells with `h = L / 2**n` is the width of the
+  real-space Gaussian, `a = 2 pi^2 sigma^2 / N^2` (tested). At fixed physical `T`,
+  `sigma` doubles with every qubit.
+- Files: `oneshot.py` (classical plans, no state vectors), `oneshot_kernels.py`,
+  `oneshot_sim.py` (SIMULATOR-ONLY post-selection drivers), `oneshot_resources.py`.
+  The system register keeps the swap-free mirrored layout (Fourier bit b on qubit
+  n-1-b); ancillas are separate qviews, never one padded vector.
+- Route A: one ancilla, multiplexed `RY(2 arccos g)` (Gray code, `2**n` RY + `2**n` CX).
+  Exact reference for small n; gate count exponential.
+- Route B: sign bit = qubit 0; a CX from it onto the low bits (self-inverse) gives
+  `v = low XOR s`, and `m^2 = v^2 + s (2 v + 1)` has only positive coefficients, so
+  `g` is a product of `n` CRY and `n(n-1)/2` CCRY contractions (two's complement has
+  negative cross terms with the sign bit, factors above 1, not block-encodable; tested).
+  A CCRY is written as 3 CRY + 2 CX (8 lowered CX): CUDA-Q 0.16's own two-control RY
+  lowers to 14 CX plus a compiler ancilla (measured). B2 = `n(n+1)/2` explicit
+  ancillas; B1 = one ancilla with `mz` then `reset` after each factor, run through
+  `cudaq.run` (`sampling.run_records`); the factors commute, so the all-zero record has
+  the same probability (tested against B2 and the exact distribution).
+- Mid-circuit `mz` + `reset` status (report, do not guess): works on qpp-cpu through
+  `cudaq.run` on a `-> list[bool]` kernel. `cudaq.sample` with named registers cannot
+  give the joint statistic (global counts keep only the final register). The nvidia
+  target is NOT yet checked (needs a GPU job). CUDA-Q's IonQ, IQM and OQC pages say
+  nothing about mid-circuit measurement or reset; AQT is not a 0.16 target.
+  `cudaq.translate` accepts such kernels as OpenQASM 2 and `qir-adaptive`; `qir-base`
+  fails ("QIR conformance failed"). Keep B2 as the fallback.
+- Route C: the multiplier `g` is the DFT of real weights `w_s` (inverse DFT of `g`,
+  signed). Window `s in [-2**(q-1), 2**(q-1))`, `q` minimal with dropped L1 mass at most
+  1e-13; LCU `A_L^dagger SELECT A_R` with a signed RY-tree `A_R` and an unsigned `A_L`;
+  the controlled shifts are phase layers inside the SAME QFT sandwich as the advection
+  (`q n` cr1). `lambda = sum |w_s|`. Cost of the tree `~ 2**q ~ sigma`: EXPONENTIAL in n
+  at fixed physical `T`; for `sigma < ~2.5` the Nyquist cut leaves a ripple and the
+  window is the whole grid (`q = n`). Moderate-`sigma` route only.
+- Counts (`benchmarks/oneshot_resources.py`, lowered CX, "negative"; every one measured
+  from the OpenQASM lowering of a builder mirror and equal to the construction): n = 10:
+  A 1204, B 578 (55 ancillas for B2, 1 for B1 with 55 mid-circuit measurements), C at
+  `sigma = 4` 424 (q = 6). B beats A from n = 8. `"zero"` adds `12n - 22` CX.
+- `qasm_stats` splits statements on `;` (CUDA-Q writes `reset q[3];ry(...) q[3];` on one
+  line; splitting on lines silently dropped the gate after each reset).
+
 ## Hardware portability rule
 - Solvers intended for QPUs are gate-level @cudaq.kernel code
   (QFT, exp_pauli, rotations, CNOT). No cudaq.evolve / dynamics target in
@@ -242,7 +290,8 @@ ruff check . && ruff format --check .
 1. Linear advection (unitary): spectral solver, QFT -> diagonal phases -> iQFT.
 2. Advection-diffusion (non-unitary): variational time stepping
    (Lubasch et al., PRA 101, 010301, 2020 style cost).
-3. Burgers: Cole-Hopf to heat equation, then nonlinear variational ansatz.
+3. Burgers: Cole-Hopf to heat equation (the one-shot circuit with c = 0 evolves phi),
+   then nonlinear variational ansatz.
 Classical reference (numpy FFT, exact for linear periodic case) is the
 ground truth for every test.
 
