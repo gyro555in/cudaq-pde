@@ -1,8 +1,8 @@
 """Structural guard: the hardware path never reads a state vector.
 
 Scans the AST of every module in the package. ``cudaq.get_state`` may be called only in
-the explicitly SIMULATOR-ONLY modules listed below, and ``cudaq.sample`` only in the
-sampling wrapper.
+the explicitly SIMULATOR-ONLY modules listed below, and ``cudaq.sample`` and
+``cudaq.run`` (mid-circuit records of route B1) only in the sampling wrapper.
 """
 
 import ast
@@ -16,6 +16,7 @@ SRC = Path(__file__).resolve().parent.parent / "src" / "cudaq_pde"
 SIMULATOR_ONLY = {
     "solvers/variational.py",  # simulator_cost_and_state
     "solvers/spectral.py",  # evolve_state
+    "solvers/oneshot_sim.py",  # evolve_oneshot (post-selection on the state vector)
 }
 SAMPLING_MODULE = "solvers/sampling.py"
 HARDWARE_PATH = [
@@ -30,6 +31,8 @@ HARDWARE_PATH = [
     "solvers/spectral_measure.py",
     "solvers/spectral_kernels.py",
     "solvers/variational_kernels.py",
+    "solvers/oneshot.py",
+    "solvers/oneshot_kernels.py",
 ]
 
 
@@ -69,14 +72,14 @@ def test_simulator_only_modules_say_so(module: str) -> None:
     assert "SIMULATOR-ONLY" in (SRC / module).read_text()
 
 
-def test_cudaq_sample_has_a_single_call_site() -> None:
+def test_cudaq_sample_and_run_have_a_single_call_site() -> None:
     callers = {
         m
         for m in all_modules()
         for node in ast.walk(ast.parse((SRC / m).read_text()))
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
-        and node.func.attr in ("sample", "sample_async", "observe")
+        and node.func.attr in ("sample", "sample_async", "observe", "run", "run_async")
         and isinstance(node.func.value, ast.Name)
         and node.func.value.id == "cudaq"
     }
