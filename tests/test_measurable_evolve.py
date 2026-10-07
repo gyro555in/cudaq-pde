@@ -63,7 +63,7 @@ def run(shots: int, seed: int = 1):
     infid = np.array(
         [
             1 - (numpy_ansatz(N, th, DEPTH) @ r) ** 2
-            for th, r in zip(res.thetas, ref_dir)
+            for th, r in zip(res.thetas, ref_dir, strict=True)
         ]
     )
     norm_err = np.abs(res.norms_abs - np.linalg.norm(ref, axis=1)) / np.linalg.norm(
