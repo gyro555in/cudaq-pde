@@ -188,6 +188,37 @@ ruff check . && ruff format --check .
 - Hardware-path modules never call `cudaq.get_state`; statevector checks are in tests
   and labelled STATEVECTOR CHECK.
 
+## Measurable path (solvers/measurable*.py, sampling.py, spectral_measure.py)
+- Rules enforced by `tests/test_hardware_path_purity.py` (AST scan): hardware-path
+  modules never call `cudaq.get_state`; only `variational.py` and `spectral.py` do
+  (SIMULATOR-ONLY); `cudaq.sample` is called only in `sampling.sample_counts`, which
+  owns seeding (`Sampler`: `base_seed + circuit_index`). Statevector checks live in
+  tests and are labelled STATEVECTOR CHECK.
+- QFT shifts and the LCU SELECT reuse the CP3 `phase_layer_mirrored` (and its
+  controlled twin in `spectral_kernels.py`); angles come from
+  `spectral.shift_angles` (a shift is advection by one cell, c*dt = +-L/N, "negative"
+  Nyquist). `tests/test_shift_spectral_crosscheck.py` pins this to the spectral circuit.
+- Cost circuit (`measurable_kernels.lcu_cost_circuit`): `A(theta_prev)`, LCU block,
+  `A(theta)^dagger`, sample all qubits. `P_joint = P(sys=0, anc=00) = <psi|b>^2/lambda^2`,
+  `P_succ = P(anc=00) = ||b||^2/lambda^2`, `C = 1 - P_joint/P_succ`,
+  `|norm_new| = |norm_prev| lambda sqrt(P_joint)` (sign = unobservable global phase).
+- Compared with the Hadamard test (controlled ansatz, 3 overlap circuits + 2 per step):
+  n = 3, depth 2: 36 vs 288 lowered CX per cost evaluation; ~3.3x lower estimator std at
+  equal total shots; std -> 0 at the optimum (numpy Monte Carlo). LCU is recommended
+  and implemented.
+- Gradients: exact parameter shift `[C(theta_i + pi/2) - C(theta_i - pi/2)]/2`, checked
+  against finite differences to 1e-8 and for unbiasedness under sampling. Optimizer:
+  heavy-ball descent (lr 1, momentum 0.8, 60 iterations, rate decays to 0.1); Adam
+  reached only 3e-6 on exact gradients, heavy ball 4e-11. Circuits per step
+  `iterations * 2P + 1`.
+- Shot study (`benchmarks/shot_study.py`, n = 3, depth 2, 5 steps): final infidelity to
+  FD-Euler 1.6e-2 / 1.2e-3 / 1.5e-4 at 1e2 / 1e3 / 1e4 shots (about 1/shots), 1081
+  circuits per step. Full sweep via `benchmarks/shot_study.sbatch` (CPU partition, not
+  submitted without approval; ~26 min for 10 seeds).
+- Power spectrum: `iqft_b = R F-`, so register index `r` is the bit-reversed FFT index,
+  `k_fft = rev(r)`; `P[k] = |u_hat_k|^2/(N ||u||^2)`; advection leaves it invariant;
+  error follows `sqrt((1 - sum p^2)/N)` and scales as shots^-0.51 (n = 3..8).
+
 ## Hardware portability rule
 - Solvers intended for QPUs are gate-level @cudaq.kernel code
   (QFT, exp_pauli, rotations, CNOT). No cudaq.evolve / dynamics target in

@@ -8,7 +8,17 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - Cyclic shift kernels `increment` / `decrement` (QFT, multi-controlled X, and
   explicit-ancilla forms) and LCU preparation of `(I + dt L)|psi>` with
-  post-selection, with resource tables (`benchmarks/measurable_resources.py`).
+  post-selection, with resource tables (`benchmarks/measurable_resources.py`). The
+  QFT form is built from the spectral phase-layer kernels (a shift is advection by
+  one grid cell, cross-tested against the spectral circuit).
+- Measurable variational step: LCU cost circuit, sampled cost and norm update,
+  parameter-shift gradients, heavy-ball descent, a single `cudaq.sample` wrapper, a
+  comparison with the Hadamard-test cost (gate counts and estimator statistics), and
+  a shot-noise study script with a CPU sbatch (`benchmarks/shot_study.*`).
+- Measurable power spectrum of the evolved field with the bit-reversed ordering
+  handled, a fused variant without the cancelling QFT pair, and its shot-noise
+  scaling (`benchmarks/spectrum_shots.py`).
+- A structural test that only documented simulator modules call `cudaq.get_state`.
 
 ### Changed
 - One vocabulary for the cyclic shifts everywhere: `classical.increment` and

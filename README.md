@@ -27,10 +27,10 @@ which has the same discretization, for the variational one.
   with `n`. The drivers read the state vector with `cudaq.get_state`, which only
   exists on simulators; every function that does so is marked SIMULATOR-ONLY.
   Observables and overlaps (Hadamard or swap tests) are the measurable outputs.
-- **The variational cost is evaluated on the simulator** from the state vector.
-  The hardware version is described (in the docstring of
-  `cudaq_pde.solvers.variational.simulator_cost_and_state`) but not run, see the
-  resource summary below.
+- **The default variational solver evaluates its cost on the simulator** from the
+  state vector. A shot-based version that never reads a state vector
+  (`cudaq_pde.solvers.measurable`, see "Measurable path") is implemented and tested on
+  the simulator with sampled counts; no QPU has run it.
 - Scope: 1D, periodic boundaries, real fields in the variational solver, explicit
   Euler (stable only for `nu > 0` and `dt <= min(2 nu / c**2, h**2 / (2 nu))`,
   which the code asserts).
@@ -163,6 +163,33 @@ Hadamard-test circuit (all amplitudes are real, so one circuit per overlap).
   `||b||**2`, independent of `theta`.
 - A finite-difference gradient costs `P + 1` cost evaluations, `P = n (depth + 1)`.
 - The shifts are the spectral circuit above with the `"negative"` convention.
+
+## Measurable path (shots only, no state vector)
+
+`cudaq_pde.solvers.measurable` and `spectral_measure` use only `cudaq.sample` counts;
+a test enforces that no hardware-path module calls `cudaq.get_state`, and that
+`cudaq.sample` has a single call site (`solvers/sampling.py`).
+
+- **Variational cost.** The target `b = (I + dt L) psi_prev` is prepared by a linear
+  combination of unitaries (LCU) with two ancillas, `A(theta)^dagger` is applied and
+  everything is sampled: `C = 1 - P(sys = 0 | anc = 00)` and the norm update
+  `|norm| lambda sqrt(P_joint)` come from the same counts. One circuit per cost
+  evaluation, no controlled ansatz. Gradients are exact parameter-shift gradients
+  (`2P` circuits); the optimizer is heavy-ball descent.
+- **Compared with a Hadamard test** (3 overlap circuits per evaluation, controlled
+  ansatz, plus 2 per-step circuits): at n = 3, depth 2 the LCU circuit is 36 lowered
+  CX against 288 for the three Hadamard circuits (CUDA-Q lowering, not
+  hardware-native), and at equal total shots its estimator has about 3.3 times lower
+  standard deviation, which goes to zero at the optimum while the Hadamard test's does
+  not (numpy Monte Carlo of the estimators).
+- **Shot noise** (n = 3, 5 steps, final infidelity to explicit-Euler FD, mean of 3
+  seeds): about 1.6e-2, 1.2e-3 and 1.5e-4 at 100, 1,000 and 10,000 shots per circuit,
+  with 1081 circuits (1.08e5 to 1.08e7 shots) per time step. The full sweep is
+  `benchmarks/shot_study.sbatch`.
+- **Power spectrum.** After the evolution, a swap-free QFT-dagger and sampling give
+  `P[k] = |u_hat_k|^2 / (N ||u||^2)`. The sampled bitstring index is the bit-reversed
+  FFT index. The error matches the multinomial prediction and scales as
+  shots^-0.51 for n = 3 to 8.
 
 ## Roadmap
 
