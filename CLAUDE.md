@@ -15,6 +15,17 @@ after my approval.
 - Dev on ROSI (HZDR). Login node: CPU only (target qpp-cpu).
   GPU runs (A100) via srun/sbatch only. Later: JURECA H100, possibly B200.
 - Never run GPU jobs on the login node.
+- Login node limits: processes are killed after 300 s of CPU time (all threads
+  count), and the qpp-cpu simulator spawns OpenMP threads on every core.
+  `env/activate_rosi.sh` sets `OMP_NUM_THREADS=1` only when `SLURM_JOB_ID` is
+  unset (login node); inside a Slurm job the defaults are kept. Unit tests and
+  the resource table run on the login node; anything heavier (large sweeps,
+  GPU tests, benchmarks) runs via sbatch from the repo root.
+- CUDA-Q runtime threads spin across all cores even with `OMP_NUM_THREADS=1`
+  (measured: 3.8 s CPU for 0.5 s of work). On the login node run tests with
+  `env/pytest_login.sh`, which pins to one core so CPU time equals wall time
+  (0.4 s CPU for the same work). It refuses to run inside a Slurm job; there use
+  plain `pytest`. Pin other login-node scripts the same way with `taskset -c 0`.
 
 ### Activation (ROSI)
 ```bash
@@ -30,19 +41,42 @@ Do NOT load any CUDA module; CUDA-Q wheels bring their own runtime.
 ### Install and test
 ```bash
 pip install -e ".[cu12,dev]"   # or [cu13,dev]; install exactly one CUDA-Q variant
-pytest                          # CPU (qpp-cpu); add --run-gpu only on a GPU node
+env/pytest_login.sh             # login node (pinned), skips slow tests: ~39 s CPU
+env/pytest_login.sh --run-slow  # everything except GPU: ~126 s CPU (before commits)
+pytest --run-slow               # inside a Slurm job (plain pytest); CI also uses it
+pytest --run-gpu --run-slow -m gpu   # GPU tests, only on a GPU node via sbatch
 ruff check . && ruff format --check .
 ```
 
 ### Layout
-- `src/cudaq_pde/`: `classical.py`, `encoding.py`, `metadata.py`, `solvers/`
-- `tests/`, `examples/`, `benchmarks/`, `logs/` (sbatch output, gitignored)
+- `src/cudaq_pde/`: `classical.py`, `encoding.py`, `encoding_kernels.py`,
+  `metadata.py`, `solvers/` (`spectral*.py`: gate-level advection;
+  `variational.py` driver and `variational_kernels.py` ansatz: advection-diffusion)
+- `tests/`, `examples/`, `benchmarks/`, `logs/` (sbatch output, gitignored),
+  `results/` (example plots and JSON, gitignored)
+- Release files: `README.md` (snippets and resource table are checked by
+  `tests/test_readme.py`), `CHANGELOG.md`, `CITATION.cff`; the version in
+  pyproject, CITATION and CHANGELOG must agree (`tests/test_release_metadata.py`).
+  No license is chosen yet, and date, DOI and ORCID are deliberately not set.
+- Examples (`examples/advection_spectral.py`,
+  `examples/advection_diffusion_variational.py`) write a PNG and a metadata JSON
+  to `results/`. On the login node run them pinned: `taskset -c 0 python examples/<file>.py`.
 - `env/`: activation script, lock file, one-off environment checks (excluded from ruff)
 - Submit sbatch jobs from the repo root, output goes to `logs/%x_%j.out`.
+- `benchmarks/spectral_resources.py` prints the resource table;
+  `benchmarks/variational_report.py` prints the variational accuracy tables;
+  `benchmarks/gpu_tests.sbatch` runs `pytest --run-gpu -m gpu` on one A100.
 
 ### Verified
 - A100 GPU (driver 570.158.01): nvidia fp64 target verified to 1e-12 agreement with CPU.
 - See `env/ENVIRONMENT.md` for full details: system, hardware, dependencies, job template.
+
+## Test markers
+- `gpu`: needs a GPU, skipped unless `--run-gpu`. `slow`: a test (or a group sharing
+  cached results) taking more than about 1 s, skipped unless `--run-slow`. Mark new tests
+  slow when they exceed ~1.5 s; CI and sbatch runs pass `--run-slow`. Login-node CPU time
+  of the default run: 125.5 s before the marker, 38.6 s after; with `--run-slow` 126 s.
+  `tests/test_markers.py` tests the mechanism with the repository's real `conftest.py`.
 
 ## Numerical reproducibility (non-negotiable)
 - GPU target always: cudaq.set_target("nvidia", option="fp64").
@@ -55,7 +89,144 @@ ruff check . && ruff format --check .
 - n qubits encode N = 2**n grid values via amplitude encoding (normalized).
   Track the norm classically and document it.
 - Periodic boundary conditions in the MVP.
-- Bit/qubit ordering must be documented and tested once against numpy.
+- Qubit ordering (measured on CUDA-Q 0.16, tested against numpy in
+  `tests/test_encoding_cudaq.py`): grid index j = sum_k b_k 2^k, qubit k holds
+  bit b_k. Qubit 0 is the least significant bit, qubit n-1 the most
+  significant. `psi[j] = u[j] / ||u||` equals the `cudaq.get_state` layout, so
+  no bit reversal is needed. In `cudaq.sample` bitstrings character k is qubit
+  k (the string reads LSB first); convert with
+  `cudaq_pde.encoding.bitstring_to_index`. All kernels (QFT, phases) must use
+  this convention.
+- Wavenumbers: `classical.wavenumbers(n, L)` gives k in FFT array order
+  (0, 1, ..., N/2-1, -N/2, ..., -1 times 2 pi / L). The Nyquist mode is
+  m = -N/2. `evolve_spectral(..., nyquist=...)` fixes the Nyquist convention:
+  "zero" (default) uses k = 0 for odd derivatives and k^2 = (pi N / L)^2 for
+  diffusion, so real data stays real; "negative" uses k = -N/2, which is what
+  a per-qubit phase circuit applies. Both are unitary for nu = 0. See the
+  `classical.py` module docstring.
+
+## Spectral advection circuit (solvers/spectral*.py)
+- CUDA-Q 0.16 has no QFT; `spectral_kernels.qft_b` is circuit B (H first on
+  qubit 0, controlled R1(pi/2^d), no final swaps). Measured against numpy
+  (`tests/test_spectral_qft.py`, n = 2..6, all basis inputs, 1e-12):
+  `qft_b = F+ R`, where `F+ = sqrt(N) * numpy.fft.ifft` (exp(+2 pi i jk/N)
+  / sqrt(N)) and R is the bit reversal. The QFT has the + sign, so it is the
+  inverse DFT up to normalization: QFT = `qft_b` after R, QFT-dagger =
+  `fft / sqrt(N)`.
+- Hence the circuit is QFT-dagger -> phases -> QFT (numpy `fft` is the
+  QFT-dagger), with phase exp(-i c (2 pi / L) k t).
+- Swap-free is exact, not approximate: U = QFT D QFT-dagger = B R D R B-dagger
+  and R D R is D with the bit index reversed, so the default circuit is
+  B-dagger, phases on mirrored qubits (Fourier bit b on qubit n-1-b), B.
+  `swaps=True` keeps B-dagger, R, D, R, B. Same unitary (tested to 1e-13).
+- Phase layer: k is the two's-complement integer of the register (top bit
+  weight -2^(n-1)), so exp(-i c kappa t k) is n single-qubit R1 gates with
+  theta_b = -c kappa t w_b, kappa = 2 pi / L. This is the "negative" Nyquist
+  convention. "zero" adds one (n-1)-controlled R1(-c kappa t N/2) on the
+  Nyquist state (X conjugation on the clear qubits). Angles are linear in t,
+  so m steps of dt equal one shot of m*dt exactly.
+- `spectral.evolve*` read the state with `cudaq.get_state`: SIMULATOR-ONLY.
+- Closed-form native gate counts per step (swap-free, "negative"): h = 2n,
+  cr1 = n(n-1), r1 = n, total n^2 + 2n, two-qubit gates n(n-1), no swaps.
+  `swaps=True` adds 2*floor(n/2) swaps. "zero" adds 2(n-1) X and one gate with
+  n-1 controls. Lowered CX (CUDA-Q OpenQASM 2 lowering, not hardware-native):
+  2n(n-1) for "negative" (cr1 = 2 CX, swap = 3 CX); "zero" adds 12n-22 CX for
+  n >= 3 and n-2 ancilla qubits in that lowering.
+
+## Variational advection-diffusion (solvers/variational*.py)
+- Shift names (one vocabulary everywhere, defined by numpy and pinned by
+  `tests/test_shift_definitions.py`): `classical.increment(u) = np.roll(u, +1)`,
+  i.e. `(increment u)_j = u_{j-1}`, on basis states `|j> -> |j+1>`;
+  `classical.decrement(u) = np.roll(u, -1)`, `(decrement u)_j = u_{j+1}`,
+  `|j> -> |j-1>`. The CUDA-Q kernels in `shift_kernels.py` use the same names and
+  are tested against these functions. Do not introduce S+/S- again.
+- Reference: `classical.evolve_fd_euler` is explicit Euler on the periodic
+  central-difference operator, `I + dt L = a0 I + a_dec * decrement + a_inc *
+  increment` with `a0 = 1-2r`, `a_dec = r-s` (weight of `u_{j+1}`),
+  `a_inc = r+s` (weight of `u_{j-1}`), `r = nu dt/h^2`,
+  `s = c dt/(2h)`; `fd_euler_coefficients` returns `(a0, a_dec, a_inc)`. The variational solver is validated against THIS (isolates
+  optimization error); FD-Euler vs `evolve_spectral` is the discretization error
+  and is reported separately.
+- Stability is asserted (`check_fd_euler_stable`, exact discrete amplification):
+  `dt <= min(2 nu/c^2, h^2/(2 nu))` is a sufficient closed form. `nu = 0` has no
+  stable explicit step, so CP4 needs `nu > 0`.
+- Per step `b = (I + dt L) psi_prev` (unnormalized) and
+  `C(theta) = 1 - <psi|b>^2/||b||^2`, the infidelity to `b/||b||`. Norm tracking:
+  `norm_new = norm_prev * <psi(theta*)|b>`. The norm is SIGNED: C is invariant
+  under `psi -> -psi` (global phase) and the optimizer may land on either sign
+  (observed negative for n = 4), so the sign is part of the classical scalar and
+  `norm * psi` is the correct field.
+- Ansatz: RY layer then `depth` x (CX ladder, RY layer), `n(depth+1)` angles, real
+  amplitudes. Needed depth for the smooth test field: n = 3 depth 2, n = 4
+  depth 3 (observed infidelity 1e-12 and 1e-9; depth 1 stalls at 3e-3 and 8e-3).
+- Optimizer: L-BFGS-B with finite-difference gradients (default; `tol` is the
+  projected-gradient tolerance, reaching `C ~ tol^2`, floor at the 1e-8 finite
+  difference step) or COBYLA (hits `maxiter` and stalls near 1e-4 here, so much
+  weaker). Seeded init, warm start, deterministic. `nfev` per step is reported
+  (n = 4: ~800 to 1500 per step, ~2800 for the initial fit).
+- `variational.simulator_cost_and_state` is the only `cudaq.get_state` call
+  (SIMULATOR-ONLY). Hardware version: Hadamard tests on `U_theta^dagger V U_prev`
+  with `V in {I, decrement, increment}`: 3 distinct overlap circuits per cost
+  evaluation, plus 2 per step (`<decrement>`, `<decrement^2>`) for `||b||^2`; a finite-difference gradient costs
+  `P + 1` evaluations. The shifts are the CP3 spectral circuit with the "negative"
+  Nyquist convention.
+- Global error obeys `phi_s <= arcsin(kappa sin phi_{s-1}) + arcsin(sqrt(C_s))`
+  with `kappa = max|g|/min|g|` of `I + dt L`. kappa is not near 1 (1.15 for
+  n = 3, 2.08 for n = 4: the highest mode is damped most), so the bound is
+  valid but loose.
+
+## Shifts and LCU target preparation (solvers/shift_kernels.py, lcu*.py)
+- `increment_*` / `decrement_*` kernels in three forms, tested on every basis state
+  for n = 2..6: `qft` (QFT sandwich with the "negative" convention, no ancilla,
+  `2n(n-1)` lowered CX), `mcx` (multi-controlled X cascade, no source ancilla but the
+  compiler adds some from n = 4), `ladder` (`n-2` explicit ancillas, Toffoli and CX
+  only, `13n-25` lowered CX).
+- CUDA-Q 0.16 kernels cannot mix one qubit and a qview as control operands, and qviews
+  are sliced with Python syntax (`q[a:b]`), not `.slice`. An ancilla-controlled MCX
+  cascade therefore needs a Toffoli ladder with `n-1` work ancillas.
+- LCU: `I + dt L = a0 I + a_dec * decrement + a_inc * increment` with 2 ancilla qubits
+  (slot `00` identity, `a0 = 1` decrement, `a1 = 1` increment, slot `11` unused);
+  PREPARE = RY + controlled RY, signs of negative coefficients are a Z on the matching
+  ancilla (a_dec can be negative while explicit Euler is stable), SELECT = QFT sandwich
+  (`QFT (c-D_dec c-D_inc) QFT-dagger`, `n^2 + n` cr1) or the Toffoli ladder, post-select
+  ancillas on `|00>`. Success probability `||b||^2 / lambda^2`, `lambda = sum |c_i|`
+  (equals 1 when all coefficients are >= 0). Verified against `evolve_fd_euler` to 1e-12.
+- LCU block lowered CX (`benchmarks/measurable_resources.py`): QFT SELECT
+  `2(n^2+n)+4`, ladder SELECT `24(n-1)+2n+4` with `n-1` extra ancillas; the ladder only
+  wins from n = 11.
+- Hardware-path modules never call `cudaq.get_state`; statevector checks are in tests
+  and labelled STATEVECTOR CHECK.
+
+## Measurable path (solvers/measurable*.py, sampling.py, spectral_measure.py)
+- Rules enforced by `tests/test_hardware_path_purity.py` (AST scan): hardware-path
+  modules never call `cudaq.get_state`; only `variational.py` and `spectral.py` do
+  (SIMULATOR-ONLY); `cudaq.sample` is called only in `sampling.sample_counts`, which
+  owns seeding (`Sampler`: `base_seed + circuit_index`). Statevector checks live in
+  tests and are labelled STATEVECTOR CHECK.
+- QFT shifts and the LCU SELECT reuse the CP3 `phase_layer_mirrored` (and its
+  controlled twin in `spectral_kernels.py`); angles come from
+  `spectral.shift_angles` (a shift is advection by one cell, c*dt = +-L/N, "negative"
+  Nyquist). `tests/test_shift_spectral_crosscheck.py` pins this to the spectral circuit.
+- Cost circuit (`measurable_kernels.lcu_cost_circuit`): `A(theta_prev)`, LCU block,
+  `A(theta)^dagger`, sample all qubits. `P_joint = P(sys=0, anc=00) = <psi|b>^2/lambda^2`,
+  `P_succ = P(anc=00) = ||b||^2/lambda^2`, `C = 1 - P_joint/P_succ`,
+  `|norm_new| = |norm_prev| lambda sqrt(P_joint)` (sign = unobservable global phase).
+- Compared with the Hadamard test (controlled ansatz, 3 overlap circuits + 2 per step):
+  n = 3, depth 2: 36 vs 288 lowered CX per cost evaluation; ~3.3x lower estimator std at
+  equal total shots; std -> 0 at the optimum (numpy Monte Carlo). LCU is recommended
+  and implemented.
+- Gradients: exact parameter shift `[C(theta_i + pi/2) - C(theta_i - pi/2)]/2`, checked
+  against finite differences to 1e-8 and for unbiasedness under sampling. Optimizer:
+  heavy-ball descent (lr 1, momentum 0.8, 60 iterations, rate decays to 0.1); Adam
+  reached only 3e-6 on exact gradients, heavy ball 4e-11. Circuits per step
+  `iterations * 2P + 1`.
+- Shot study (`benchmarks/shot_study.py`, n = 3, depth 2, 5 steps): final infidelity to
+  FD-Euler 1.6e-2 / 1.2e-3 / 1.5e-4 at 1e2 / 1e3 / 1e4 shots (about 1/shots), 1081
+  circuits per step. Full sweep via `benchmarks/shot_study.sbatch` (CPU partition, not
+  submitted without approval; ~26 min for 10 seeds).
+- Power spectrum: `iqft_b = R F-`, so register index `r` is the bit-reversed FFT index,
+  `k_fft = rev(r)`; `P[k] = |u_hat_k|^2/(N ||u||^2)`; advection leaves it invariant;
+  error follows `sqrt((1 - sum p^2)/N)` and scales as shots^-0.51 (n = 3..8).
 
 ## Hardware portability rule
 - Solvers intended for QPUs are gate-level @cudaq.kernel code
@@ -84,4 +255,14 @@ ground truth for every test.
   Kernel gate names (h, cx, ...) look undefined to ruff, so F821 is ignored
   per file only for `*_kernels.py` via `[tool.ruff.lint.per-file-ignores]`
   in pyproject.toml. Do not ignore F821 anywhere else.
+- Never compute an angle or infidelity between nearly equal states as `1 - F` or
+  `arccos/arcsin(sqrt(1 - F))`: the subtraction cancels (absolute error ~eps, so relative
+  error eps/theta^2; the angle has an absolute floor sqrt(eps) ~ 1.5e-8). Use
+  `cudaq_pde.metrics` (`state_angle(s)`, `infidelity/infidelities` = sin^2 of an atan2
+  of the orthogonal residual, backward stable to a few eps absolute; sums via `np.sum`,
+  not BLAS dots, for run-to-run determinism). float64 cannot do better than eps ABSOLUTE
+  for generic stored vectors (relative eps only for exactly representable inputs).
+  `variational.reference_errors` returns `(angle, infidelity, l2)`. Tolerances in tests
+  that compare such quantities must come from this precision (a few eps), see
+  `test_global_error_obeys_angle_accumulation_bound`.
 - Writing style in docs/README: no em dashes.

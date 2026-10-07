@@ -31,5 +31,8 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
-      - name: Pytest (qpp-cpu, gpu tests skipped)
-        run: pytest -v
+      - name: Pytest (qpp-cpu, all slow tests, gpu tests skipped)
+        env:
+          OMP_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+        run: pytest -v --run-slow

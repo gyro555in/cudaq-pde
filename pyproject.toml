@@ -6,6 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "cudaq-pde"
 version = "0.1.0"
 description = "Quantum PDE solvers on CUDA-Q (gate-level reference implementations)"
+readme = "README.md"
+authors = [{name = "Kushal Ramakrishna"}]
+keywords = ["quantum computing", "CUDA-Q", "PDE", "quantum Fourier transform"]
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26",
@@ -17,12 +20,18 @@ cu12 = ["cuda-quantum-cu12>=0.16,<0.17"]
 cu13 = ["cuda-quantum-cu13>=0.16,<0.17"]
 dev = ["pytest", "ruff", "matplotlib"]
 
+[project.urls]
+Repository = "https://github.com/gyro555in/cudaq-pde"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["gpu: needs a GPU target; skipped unless --run-gpu is given"]
+markers = [
+    "gpu: needs a GPU target; skipped unless --run-gpu is given",
+    "slow: takes more than about 1 s; skipped unless --run-slow is given",
+]
 
 [tool.ruff]
 target-version = "py311"
