@@ -49,6 +49,10 @@ def test_study_runs_and_reports_the_accounting(tmp_path: Path, monkeypatch) -> N
             str(tmp_path),
         ]
     )
+    assert out["metadata"]["threads_requested"] == 1  # the --threads default
+    assert out["params"]["threads"] == 1
+    for key in ("omp_num_threads", "cpus_available"):
+        assert key in out["metadata"]
     row = out["summary"][0]
     P = 3 * 3
     assert row["circuits_per_step"] == 3 * 2 * P + 1
@@ -68,3 +72,7 @@ def test_sbatch_is_syntactically_valid_and_targets_cpu() -> None:
     text = (BENCH / "shot_study.sbatch").read_text()
     assert "--partition=cpu-genoa" in text and "--output=logs/%x_%j.out" in text
     assert "gpus" not in text  # a CPU job
+    assert "--cpus-per-task=1" in text
+    # the environment is printed AFTER the thread exports
+    assert text.index('export OMP_NUM_THREADS="$THREADS"') < text.index("env | grep")
+    assert '--threads "$THREADS"' in text

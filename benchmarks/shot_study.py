@@ -165,6 +165,12 @@ def main(argv=None) -> dict:
     p.add_argument("--iterations", type=int, default=60)
     p.add_argument("--lr", type=float, default=1.0)
     p.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="OpenMP/BLAS threads the job was started with (recorded)",
+    )
+    p.add_argument(
         "--outdir", default=str(Path(__file__).resolve().parent.parent / "results")
     )
     a = p.parse_args(argv)
@@ -173,6 +179,7 @@ def main(argv=None) -> dict:
         f"iterations={a.iterations} lr={a.lr} P={a.n * (a.depth + 1)}"
     )
     metadata = collect_metadata()  # at the start: provenance of the code that runs
+    metadata["threads_requested"] = a.threads
     runs = run_study(a.n, a.depth, a.steps, a.shots, a.seeds, a.iterations, a.lr)
     rows = summarize(runs)
     print_table(rows)

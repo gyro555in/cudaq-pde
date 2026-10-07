@@ -119,8 +119,9 @@ def collect_metadata() -> dict[str, Any]:
         ``target``, ``gpu_name``, ``driver_version``, ``driver_max_cuda``
         (highest CUDA the driver supports, not the runtime in use),
         ``cuda_runtime`` (bundled runtime wheel version), ``python``,
-        ``numpy``, ``scipy``, ``hostname``, ``slurm_job_id``, ``git_commit``,
-        ``git_dirty``. Unknown values are ``None``.
+        ``numpy``, ``scipy``, ``hostname``, ``slurm_job_id``, thread settings
+        (``omp_num_threads``, ``openblas_num_threads``, ``slurm_cpus_per_task``,
+        ``cpus_available``), ``git_commit``, ``git_dirty``. Unknown values are ``None``.
     """
     meta: dict[str, Any] = {}
     meta.update(_cudaq_info())
@@ -131,6 +132,10 @@ def collect_metadata() -> dict[str, Any]:
     meta["scipy"] = _dist_version("scipy")
     meta["hostname"] = socket.gethostname()
     meta["slurm_job_id"] = os.environ.get("SLURM_JOB_ID")
+    meta["omp_num_threads"] = os.environ.get("OMP_NUM_THREADS")
+    meta["openblas_num_threads"] = os.environ.get("OPENBLAS_NUM_THREADS")
+    meta["slurm_cpus_per_task"] = os.environ.get("SLURM_CPUS_PER_TASK")
+    meta["cpus_available"] = len(os.sched_getaffinity(0))
     meta.update(_git_info())
     return meta
 
