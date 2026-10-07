@@ -414,3 +414,40 @@ def oneshot_b2_measured_loaded(
     oneshot_b2_on(sys, anc, angles, phi, zero, c1, c2, theta)
     mz(sys)
     mz(anc)
+
+
+@cudaq.kernel
+def oneshot_b1_sample_loaded(
+    n: int,
+    ld_tgt: list[int],
+    ld_alpha: list[float],
+    ld_ctl: list[int],
+    angles: list[float],
+    phi: float,
+    zero: bool,
+    c1: list[int],
+    c2: list[int],
+    theta: list[float],
+):
+    """Route B1 without a return value, for ``cudaq.sample`` (compile check only).
+
+    ``mz`` then ``reset`` after every factor, then ``mz`` of the system. ``sample``
+    keeps only the final register, so the per-shot factor outcomes are lost and the
+    post-selected distribution is NOT available from this kernel (CUDA-Q 0.16 also
+    refuses ``sample`` for kernels that branch on a measurement, so the failure flag
+    cannot be folded into the sample either). Use :func:`oneshot_b1_run_loaded` with
+    ``cudaq.run`` for the joint statistic.
+    """
+    sys = cudaq.qvector(n)
+    anc = cudaq.qubit()
+    ry_cx_sequence(sys, ld_tgt, ld_alpha, ld_ctl)
+    iqft_b(sys)
+    advection_on(sys, angles, phi, zero)
+    sign_fold(sys)
+    for i in range(len(theta)):
+        factor_to(sys, anc, c1[i], c2[i], theta[i])
+        mz(anc)
+        reset(anc)
+    sign_fold(sys)
+    qft_b(sys)
+    mz(sys)

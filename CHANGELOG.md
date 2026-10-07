@@ -34,6 +34,12 @@ All notable changes to this project are documented here. The format follows
 - `sampling.run_records`: the single `cudaq.run` call site (per-shot records of
   mid-circuit measurements).
 
+- `pytest --shard K/N` and `env/pytest_login_all.sh`: the suite runs in shards on the
+  login node so that no process exceeds about 150 s of CPU; `env/pytest_login.sh` refuses
+  `--run-slow` without `--shard`.
+- `benchmarks/mid_circuit_probe.py` and `.sbatch`: mid-circuit measurement and reset
+  probe for any target (also with `--emulate`), run on an A100 (`nvidia`, fp64).
+
 ### Fixed
 - `spectral_resources.qasm_stats` split OpenQASM 2 text by line, but CUDA-Q 0.16 writes
   `reset q[3];cx ...` on one line, so the gate after every reset was not counted. It now

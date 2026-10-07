@@ -4,12 +4,14 @@
     python benchmarks/mid_circuit_probe.py --target nvidia     # fp64, GPU node only
     python benchmarks/mid_circuit_probe.py --target ionq --emulate  # no credentials
 
-Three checks, each printed with its pass/fail and the numbers:
+Four checks, each printed with its pass/fail and the numbers:
   1. two_factor_probe through cudaq.run: joint all-zero probability vs analytic value;
   2. route B1 at n = 3 (one ancilla, mz + reset per factor, input loaded by gates):
      sampled P_succ and the post-selected distribution vs the exact values (4 sigma
      and chi-square);
-  3. route B2 at n = 3 compiled and sampled (explicit ancillas, no mid-circuit
+  3. route B1 through cudaq.sample (``b1sample``): compile and run only, the counts of
+     all shots are stored for comparison with another target;
+  4. route B2 at n = 3 compiled and sampled (explicit ancillas, no mid-circuit
      measurement): sampled distribution of all qubits, ancillas post-selected on 0.
 Exit code 0 only when every check that ran passed; a check that fails to compile
 prints the error and counts as failed. Results go to
@@ -123,7 +125,36 @@ def check_b2(shots: int, seed: int) -> dict:
     }  # fmt: skip
 
 
-CHECKS = {"joint": check_joint, "b1": check_b1, "b2": check_b2}
+def check_b1_sample(shots: int, seed: int) -> dict:
+    """Compile-and-run check of B1 through ``cudaq.sample`` (no joint statistic).
+
+    Records the system-bit counts of ALL shots (factor outcomes are not kept by
+    ``sample``); ``passed`` only means it compiled and ran. Compare the counts with the
+    qpp-cpu run of the same kernel (see the two-sample test in the report).
+    """
+    n = N_QUBITS
+    psi, _ = encoding.encode(field())
+    ld = oneshot.prepare_real(psi.real, list(range(n)))
+    plan = oneshot.oneshot_plan(n, C, NU, L, T, "zero")
+    fac = oneshot.contractions(n, plan.a)
+    args = (n, ld.tgt, ld.alpha, ld.ctl, plan.angles, plan.phi, plan.zero,
+            fac.c1, fac.c2, fac.theta)  # fmt: skip
+    counts = sampling.sample_counts(
+        ok.oneshot_b1_sample_loaded, *args, shots=shots, seed=seed
+    )
+    return {
+        "name": "route B1 n=3 via cudaq.sample (compile check, all shots)",
+        "counts": counts,
+        "passed": True,
+    }
+
+
+CHECKS = {
+    "joint": check_joint,
+    "b1": check_b1,
+    "b1sample": check_b1_sample,
+    "b2": check_b2,
+}
 
 
 def main() -> int:

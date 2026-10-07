@@ -62,3 +62,33 @@ def test_both_options_run_everything(project) -> None:
 def test_skip_reasons_name_the_option(project) -> None:
     result = project.runpytest_subprocess("-p", "no:cacheprovider", "-rs")
     result.stdout.fnmatch_lines(["*needs --run-slow*", "*needs --run-gpu*"])
+
+
+SHARD_TESTS = "\n".join(f"def test_{i}(): pass" for i in range(7))
+
+
+def test_shards_partition_the_tests(pytester: pytest.Pytester) -> None:
+    pytester.makeini(MARKERS_INI)
+    pytester.makeconftest(CONFTEST.replace('pytest_plugins = ["pytester"]', ""))
+    pytester.makepyfile(SHARD_TESTS)
+    passed = [
+        outcomes(pytester, "--shard", f"{k}/3").get("passed", 0) for k in (1, 2, 3)
+    ]
+    assert sorted(passed) == [2, 2, 3] and sum(passed) == 7
+    names = [
+        pytester.runpytest_subprocess(
+            "-p", "no:cacheprovider", "--shard", f"{k}/3", "--collect-only", "-q"
+        ).outlines
+        for k in (1, 2, 3)
+    ]
+    seen = [ln for out in names for ln in out if "::test_" in ln]
+    assert len(seen) == 7 and len(set(seen)) == 7  # disjoint and complete
+
+
+def test_bad_shard_spec_is_a_usage_error(pytester: pytest.Pytester) -> None:
+    pytester.makeini(MARKERS_INI)
+    pytester.makeconftest(CONFTEST.replace('pytest_plugins = ["pytester"]', ""))
+    pytester.makepyfile(SHARD_TESTS)
+    for bad in ("0/3", "4/3", "x", "1/0"):
+        res = pytester.runpytest_subprocess("-p", "no:cacheprovider", "--shard", bad)
+        assert res.ret != 0
