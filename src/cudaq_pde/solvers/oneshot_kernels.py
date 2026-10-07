@@ -129,9 +129,19 @@ def factor_to(
     c2: int,
     theta: float,
 ):
-    """``RY(theta)`` on ``target``, controls ``sys[c1]`` and ``sys[c2]`` if >= 0."""
+    """``RY(theta)`` on ``target``, controls ``sys[c1]`` and ``sys[c2]`` if >= 0.
+
+    The doubly controlled rotation is written as 3 CRY and 2 CX,
+    ``CRY(t/2; c2) CX(c1, c2) CRY(-t/2; c2) CX(c1, c2) CRY(t/2; c1)``: the same unitary
+    as ``ry.ctrl`` with two controls (8 lowered CX), where CUDA-Q 0.16's own lowering
+    of the two-control gate takes 14 CX and one compiler ancilla.
+    """
     if c2 >= 0:
-        ry.ctrl(theta, sys[c1], sys[c2], target)
+        ry.ctrl(0.5 * theta, sys[c2], target)
+        x.ctrl(sys[c1], sys[c2])
+        ry.ctrl(-0.5 * theta, sys[c2], target)
+        x.ctrl(sys[c1], sys[c2])
+        ry.ctrl(0.5 * theta, sys[c1], target)
     else:
         ry.ctrl(theta, sys[c1], target)
 
