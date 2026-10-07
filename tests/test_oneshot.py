@@ -261,6 +261,24 @@ def test_route_c_width_register_cost_is_exponential_in_n_at_fixed_time() -> None
     assert q[-1] == 9 or oneshot.gaussian_plan(9, a).dropped <= 1e-13
 
 
+def test_route_c_kernel_is_not_compact_below_about_two_and_a_half_cells() -> None:
+    """``g`` is cut at the Nyquist mode, ``g(N/2) = exp(-pi^2 sigma^2 / 2)``. For small
+    ``sigma`` that is not negligible, the real-space kernel has a slowly decaying
+    ripple, and a 1e-13 window needs the whole grid (``q = n``). For ``sigma >= 4``
+    the window is compact (``q ~ log2 sigma + 4``)."""
+    n = 8
+    N = 2**n
+    for sigma, compact in [(1.0, False), (2.0, False), (4.0, True), (8.0, True)]:
+        a = 2 * np.pi**2 * sigma**2 / N**2
+        plan = oneshot.gaussian_plan(n, a)
+        assert (plan.q < n) == compact, (sigma, plan.q)
+        if compact:
+            assert (
+                plan.q == int(np.ceil(np.log2(sigma))) + 4
+                or plan.q == int(np.log2(sigma)) + 4
+            )
+
+
 def test_route_c_window_error_bound_holds() -> None:
     n, a = 6, oneshot.diffusion_exponent(0.02, 1.0, L)
     plan = oneshot.gaussian_plan(n, a, tail_tol=1e-8)
