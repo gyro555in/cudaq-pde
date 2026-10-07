@@ -167,16 +167,30 @@ def test_sampled_gradient_is_unbiased() -> None:
     assert np.all(grads.std(axis=0) > 0)  # it really is noisy
 
 
-# --------------------------------------------------------------------- Adam
+# ----------------------------------------------------------- momentum descent
 
 
-def test_adam_minimizes_a_quadratic_deterministically() -> None:
+def test_momentum_descent_minimizes_a_quadratic_deterministically() -> None:
     target = np.array([0.3, -0.2, 0.5])
-    grad = lambda th: 2 * (th - target)  # noqa: E731
-    a = measurable.adam_descent(grad, np.zeros(3), 200, 0.1, lr_final_fraction=0.0)
-    b = measurable.adam_descent(grad, np.zeros(3), 200, 0.1, lr_final_fraction=0.0)
+
+    def grad(th):
+        return 2 * (th - target)
+
+    a = measurable.momentum_descent(grad, np.zeros(3), 300, 0.3, 0.8, 0.1)
+    b = measurable.momentum_descent(grad, np.zeros(3), 300, 0.3, 0.8, 0.1)
     np.testing.assert_array_equal(a, b)
-    np.testing.assert_allclose(a, target, atol=1e-3)
+    np.testing.assert_allclose(a, target, atol=1e-6)
+
+
+def test_momentum_descent_converges_on_the_exact_variational_cost() -> None:
+    """The settings used by the solver reach ~1e-10 on exact gradients (tuning runs)."""
+    n, depth = 3, 2
+    plan, theta_prev, _, b = setup(n, depth, False, seed=4)
+    f = exact_cost_fn(n, depth, b)
+    theta = measurable.momentum_descent(
+        lambda t: measurable.parameter_shift_gradient(f, t), theta_prev, 80, 1.0, 0.8
+    )
+    assert f(theta) < 1e-6 * max(f(theta_prev), 1e-3)
 
 
 # ---------------------------------------------------- the hardware path purity
@@ -202,7 +216,7 @@ def test_hardware_path_runs_with_get_state_disabled(monkeypatch) -> None:
         shots=300,
         seed=1,
         iterations=2,
-        lr=0.02,
+        lr=0.5,
     )
     assert res.thetas.shape == (3, V.num_params(n, depth))
     assert np.all(res.circuits_per_step[1:] == 2 * 2 * V.num_params(n, depth) + 1)

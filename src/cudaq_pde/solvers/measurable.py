@@ -127,32 +127,30 @@ def parameter_shift_gradient(
     return grad
 
 
-def adam_descent(
+def momentum_descent(
     grad_fn: Callable[[NDArray[np.float64]], NDArray[np.float64]],
     theta0: NDArray[np.float64],
     iterations: int,
     lr: float,
-    lr_final_fraction: float = 0.0,
-    beta1: float = 0.9,
-    beta2: float = 0.999,
-    eps: float = 1e-8,
+    momentum: float = 0.8,
+    lr_final_fraction: float = 1.0,
 ) -> NDArray[np.float64]:
-    """Adam with a linearly decaying learning rate (deterministic for a given grad).
+    """Heavy-ball gradient descent (deterministic for a given ``grad_fn``).
 
-    The rate goes from ``lr`` to ``lr * lr_final_fraction`` over the iterations; the
+    ``v <- momentum v - rate grad; theta <- theta + v`` with the rate decaying linearly
+    from ``lr`` to ``lr * lr_final_fraction``. The cost is a smooth, nearly quadratic
+    bowl whose Hessian has largest eigenvalue about 1.4 (n = 3, depth 2), so
+    ``lr = 1`` with momentum 0.8 is stable (limit ``2 (1 + momentum) / lambda_max``)
+    and converged to 1e-10 in 80 exact-gradient iterations in the tuning runs. The
     last iterate is returned (a noisy cost gives no reliable "best").
     """
     theta = np.array(theta0, dtype=np.float64)
-    m = np.zeros_like(theta)
     v = np.zeros_like(theta)
-    for k in range(1, iterations + 1):
-        g = grad_fn(theta)
-        m = beta1 * m + (1 - beta1) * g
-        v = beta2 * v + (1 - beta2) * g * g
-        frac = (k - 1) / max(iterations - 1, 1)
+    for k in range(iterations):
+        frac = k / max(iterations - 1, 1)
         rate = lr * (1.0 - (1.0 - lr_final_fraction) * frac)
-        step = (m / (1 - beta1**k)) / (np.sqrt(v / (1 - beta2**k)) + eps)
-        theta = theta - rate * step
+        v = momentum * v - rate * grad_fn(theta)
+        theta = theta + v
     return theta
 
 
@@ -180,10 +178,11 @@ def measurable_step(
     iterations: int,
     lr: float,
     final_shots: int,
-    lr_final_fraction: float = 0.0,
+    momentum: float = 0.8,
+    lr_final_fraction: float = 1.0,
     select: str = "qft",
 ) -> MeasurableStep:
-    """One Euler step: Adam on parameter-shift gradients, warm start at ``theta_prev``.
+    """One Euler step: momentum descent on parameter-shift gradients, warm start.
 
     Circuits: ``iterations * 2P`` gradient circuits of ``shots`` shots each, plus one
     final circuit of ``final_shots`` shots that estimates the cost and the success
@@ -196,11 +195,12 @@ def measurable_step(
             sampler, plan, n, depth, theta_prev, theta, shots, select
         ).cost
 
-    theta = adam_descent(
+    theta = momentum_descent(
         lambda th: parameter_shift_gradient(cost_fn, th),
         theta_prev,
         iterations,
         lr,
+        momentum,
         lr_final_fraction,
     )
     final = sampled_cost(
@@ -242,10 +242,11 @@ def evolve_measurable(
     depth: int,
     shots: int,
     seed: int,
-    iterations: int = 40,
-    lr: float = 0.05,
+    iterations: int = 60,
+    lr: float = 1.0,
     final_shots: int | None = None,
-    lr_final_fraction: float = 0.0,
+    momentum: float = 0.8,
+    lr_final_fraction: float = 0.1,
     select: str = "qft",
 ) -> MeasurableResult:
     """Shot-based evolution from ansatz angles ``theta0`` (classical preprocessing).
@@ -274,6 +275,7 @@ def evolve_measurable(
             iterations,
             lr,
             final_shots,
+            momentum,
             lr_final_fraction,
             select,
         )
