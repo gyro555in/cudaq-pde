@@ -13,7 +13,7 @@
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
 source env/activate_rosi.sh
-export OMP_NUM_THREADS=1
+export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 
 python benchmarks/shot_study.py --n 3 --depth 2 --steps 5 \
     --shots 100 1000 10000 100000 --seeds 10 \

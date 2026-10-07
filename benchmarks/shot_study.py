@@ -170,11 +170,12 @@ def main(argv=None) -> dict:
         f"Shot study: n={a.n} depth={a.depth} steps={a.steps} seeds={a.seeds} "
         f"iterations={a.iterations} lr={a.lr} P={a.n * (a.depth + 1)}"
     )
+    metadata = collect_metadata()  # at the start: provenance of the code that runs
     runs = run_study(a.n, a.depth, a.steps, a.shots, a.seeds, a.iterations, a.lr)
     rows = summarize(runs)
     print_table(rows)
     out = {
-        "metadata": collect_metadata(),
+        "metadata": metadata,
         "params": vars(a),
         "summary": rows,
         "runs": {str(k): v for k, v in runs.items()},
