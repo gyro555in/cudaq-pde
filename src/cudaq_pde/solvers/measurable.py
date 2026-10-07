@@ -64,7 +64,7 @@ def counts_to_estimate(counts: dict[str, int], n: int, shots: int) -> SampledCos
             n_succ += count
             if bits[:n] == "0" * n:
                 n_zero += count
-    cost = 1.0 - n_zero / n_succ if n_succ else 1.0
+    cost = (n_succ - n_zero) / n_succ if n_succ else 1.0  # exact integer difference
     return SampledCost(cost=cost, p_joint=n_zero / shots, n_succ=n_succ, shots=shots)
 
 

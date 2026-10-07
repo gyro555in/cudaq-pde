@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from cudaq_pde import classical
+from cudaq_pde.metrics import infidelity
 from cudaq_pde.solvers import lcu
 from cudaq_pde.solvers.ansatz_numpy import numpy_ansatz
 
@@ -44,7 +45,7 @@ def exact_quantities(
         "o": o,
         "overlap": big_o,
         "b_sq": b_sq,
-        "cost": 1.0 - big_o**2 / b_sq,
+        "cost": infidelity(psi, b),  # stable: C can be ~1e-15 at the optimum
         "p_succ": b_sq / plan.lam**2,
     }
 

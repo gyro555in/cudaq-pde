@@ -58,7 +58,7 @@ def run(
 
     ref_fd = classical.evolve_fd_euler(u0, dt, steps, c, nu, L)
     res = V.evolve_variational(u0, dt, steps, c, nu, L, depth=depth, seed=seed, tol=tol)
-    fid, l2 = V.compare_to_reference(res, ref_fd)
+    _, infid, l2 = V.reference_errors(res, ref_fd)
     spec = np.array(
         [classical.evolve_spectral(u0, s * dt, c, nu, L) for s in range(steps + 1)]
     )
@@ -72,7 +72,7 @@ def run(
     print(header + "disc(FD vs spectral)")
     for s in range(steps + 1):
         print(
-            f"  {s:4d}  {1 - fid[s]:.2e}   {l2[s]:.2e}   {res.costs[s]:.1e}  "
+            f"  {s:4d}  {infid[s]:.2e}   {l2[s]:.2e}   {res.costs[s]:.1e}  "
             f"{res.nfev[s]:5d}  {res.norms[s]:+.5f}  {disc[s]:.2e}"
         )
     print(
@@ -118,7 +118,7 @@ def run(
             "method": res.method,
         },
         "per_step": {
-            "infidelity_vs_fd_euler": (1 - fid).tolist(),
+            "infidelity_vs_fd_euler": infid.tolist(),
             "l2_vs_fd_euler": l2.tolist(),
             "cost": res.costs.tolist(),
             "nfev": res.nfev.tolist(),

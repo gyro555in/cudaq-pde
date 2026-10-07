@@ -4,7 +4,8 @@ For each shots-per-circuit setting and each seed, evolve ``--steps`` explicit-Eu
 steps with ``cudaq.sample`` only (no state vector), starting from the CP4 simulator fit
 of the initial data (classical preprocessing), and compare with explicit-Euler FD:
 
-* final and worst-step infidelity ``1 - F`` to the FD state and relative L2 error;
+* final and worst-step infidelity ``sin^2(angle)`` to the FD state, and relative L2
+  error;
 * total circuits and shots per time step: ``iterations * 2P`` gradient circuits of
   ``shots`` shots plus one final circuit (``P = n (depth + 1)`` angles);
 * norm-tracking error vs the FD norm, split into the statistical error of the sampled
@@ -26,6 +27,7 @@ import numpy as np
 
 from cudaq_pde import classical, encoding
 from cudaq_pde.metadata import collect_metadata
+from cudaq_pde.metrics import infidelities
 from cudaq_pde.solvers import measurable
 from cudaq_pde.solvers import variational as V
 from cudaq_pde.solvers.ansatz_numpy import numpy_ansatz
@@ -78,7 +80,7 @@ def run_one(n, depth, steps, shots, seed, iterations, lr, prep):
     wall = time.perf_counter() - t0
     ref_norm = np.linalg.norm(ref, axis=1)
     psis = np.array([numpy_ansatz(n, th, depth) for th in res.thetas])
-    infid = 1.0 - (np.einsum("sj,sj->s", psis, ref / ref_norm[:, None])) ** 2
+    infid = infidelities(psis, ref)  # sin^2 of the stable angle, never 1 - F
     fields = sign0 * res.norms_abs[:, None] * psis
     l2 = np.linalg.norm(fields - ref, axis=1) / ref_norm
     oracle = oracle_norms(n, depth, res.thetas, norm0, plan)

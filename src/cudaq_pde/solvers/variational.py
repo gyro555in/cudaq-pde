@@ -34,6 +34,7 @@ from numpy.typing import NDArray
 from scipy.optimize import minimize
 
 from cudaq_pde import classical, encoding
+from cudaq_pde.metrics import deterministic_dot, infidelity, state_angles
 
 TWO_PI = classical.TWO_PI
 METHODS = ("L-BFGS-B", "COBYLA")
@@ -71,7 +72,9 @@ def simulator_cost_and_state(
 
     This is the single place that reads a state vector (``cudaq.get_state``),
     which costs exponentially many shots on hardware. It returns
-    ``C = 1 - <psi|b>^2 / ||b||^2``, ``psi(theta)`` and the signed overlap
+    ``C = 1 - <psi|b>^2 / ||b||^2 = sin^2(angle(psi, b))`` (computed from the residual
+    of ``b`` orthogonal to ``psi``, so it stays accurate down to ``C ~ 1e-30``,
+    see :mod:`cudaq_pde.metrics`), ``psi(theta)`` and the signed overlap
     ``<psi|b>``.
 
     Hardware version
@@ -113,8 +116,8 @@ def simulator_cost_and_state(
     if np.max(np.abs(raw.imag)) > 1e-12:
         raise RuntimeError("ansatz state is not real; RY/CX must keep amplitudes real")
     psi = raw.real.copy()
-    overlap = float(psi @ b)
-    cost = 1.0 - overlap**2 / float(b @ b)
+    overlap = float(deterministic_dot(psi, b))
+    cost = infidelity(psi, b)  # sin^2 of the angle to b; no 1 - F cancellation
     return cost, psi, overlap
 
 
@@ -282,10 +285,13 @@ def evolve_variational(
     )
 
 
-def compare_to_reference(
+def reference_errors(
     result: VariationalResult, reference: NDArray[np.float64]
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Per-step fidelity and relative L2 error against a reference trajectory.
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Per-step angle, infidelity and relative L2 error against a reference trajectory.
+
+    Never form ``1 - fidelity`` from this module's outputs: the infidelity is returned
+    directly as ``sin^2(angle)`` (see :mod:`cudaq_pde.metrics`).
 
     Parameters
     ----------
@@ -294,12 +300,12 @@ def compare_to_reference(
 
     Returns
     -------
-    fidelity, l2_error : ndarray, shape (steps + 1,)
-        ``|<psi_s|u_ref_s>|^2 / ||u_ref_s||^2`` and
+    angle, infidelity, l2_error : ndarray, shape (steps + 1,)
+        The angle between ``psi_s`` and ``u_ref_s``, ``sin^2`` of it, and
         ``||norm_s psi_s - u_ref_s|| / ||u_ref_s||``.
     """
-    ref_norm = np.linalg.norm(reference, axis=1)
-    overlap = np.einsum("sj,sj->s", result.psis, reference)
-    fidelity = overlap**2 / ref_norm**2
-    l2 = np.linalg.norm(result.fields - reference, axis=1) / ref_norm
-    return fidelity, l2
+    angle = state_angles(result.psis, reference)
+    l2 = np.linalg.norm(result.fields - reference, axis=1) / np.linalg.norm(
+        reference, axis=1
+    )
+    return angle, np.sin(angle) ** 2, l2

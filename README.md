@@ -92,7 +92,7 @@ u0 = 1.0 + 0.5 * np.sin(x) + 0.25 * np.cos(2 * x)
 
 res = variational.evolve_variational(u0, dt, steps, c, nu, L, depth=2, seed=0, tol=1e-6)
 ref = classical.evolve_fd_euler(u0, dt, steps, c, nu, L)
-fidelity, l2 = variational.compare_to_reference(res, ref)
+angle, infidelity, l2 = variational.reference_errors(res, ref)
 print("final relative L2 error vs FD-Euler", l2[-1])
 print("cost evaluations", int(res.nfev.sum()))
 ```

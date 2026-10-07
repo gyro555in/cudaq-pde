@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from functools import cache
+from typing import NamedTuple
 
 import cudaq
 import numpy as np
@@ -61,6 +62,14 @@ def u0_of(n: int) -> np.ndarray:
     return 1.0 + 0.5 * np.sin(x) + 0.25 * np.cos(2 * x)
 
 
+class Run(NamedTuple):
+    res: V.VariationalResult
+    ref: np.ndarray
+    angle: np.ndarray  # stable angle to the FD-Euler state (cudaq_pde.metrics)
+    infid: np.ndarray  # sin^2(angle): never computed as 1 - F
+    l2: np.ndarray
+
+
 @cache
 def run(n, depth, tol, steps, seed=0, method="L-BFGS-B", maxiter=500):
     ref = classical.evolve_fd_euler(u0_of(n), DT, steps, C_ADV, NU, L)
@@ -78,15 +87,15 @@ def run(n, depth, tol, steps, seed=0, method="L-BFGS-B", maxiter=500):
         tol=tol,
         maxiter=maxiter,
     )
-    fid, l2 = V.compare_to_reference(res, ref)
-    return res, ref, fid, l2
+    angle, infid, l2 = V.reference_errors(res, ref)
+    return Run(res, ref, angle, infid, l2)
 
 
-def _table(label: str, res, fid, l2) -> str:
+def _table(label: str, res, infid, l2) -> str:
     rows = [f"{label}: step  1-F        L2         cost       nfev"]
-    for s in range(len(fid)):
+    for s in range(len(infid)):
         rows.append(
-            f"      {s:4d}  {1 - fid[s]:.2e}  {l2[s]:.2e}  "
+            f"      {s:4d}  {infid[s]:.2e}  {l2[s]:.2e}  "
             f"{res.costs[s]:.2e}  {res.nfev[s]:5d}"
         )
     return "\n".join(rows)
@@ -186,10 +195,10 @@ def test_simulator_cost_matches_numpy_and_is_sign_invariant(n: int, depth: int) 
 @pytest.mark.parametrize("n", [3, 4])
 def test_per_step_fidelity_and_l2_vs_fd_euler(n: int, capsys) -> None:
     depth, tol, steps, max_infid, max_l2 = MAIN[n]
-    res, ref, fid, l2 = run(n, depth, tol, steps)
-    print(_table(f"n={n} depth={depth} tol={tol:g}", res, fid, l2))
-    assert fid.shape == l2.shape == (steps + 1,)
-    assert np.all(1.0 - fid < max_infid), 1.0 - fid
+    res, _, _, infid, l2 = run(n, depth, tol, steps)
+    print(_table(f"n={n} depth={depth} tol={tol:g}", res, infid, l2))
+    assert infid.shape == l2.shape == (steps + 1,)
+    assert np.all(infid < max_infid), infid
     assert np.all(l2 < max_l2), l2
     assert res.costs[0] < max_infid  # initial-state fit (preparation error)
 
@@ -198,7 +207,7 @@ def test_per_step_fidelity_and_l2_vs_fd_euler(n: int, capsys) -> None:
 @pytest.mark.parametrize("n", [3, 4])
 def test_global_error_obeys_angle_accumulation_bound(n: int) -> None:
     depth, tol, steps, *_ = MAIN[n]
-    res, _, fid, _ = run(n, depth, tol, steps)
+    res, _, angle, _, _ = run(n, depth, tol, steps)
     kappa = np.linalg.cond(np.eye(2**n) + DT * dense_L(n, C_ADV, NU, L))
     # kappa = max|g| / min|g| over Fourier modes. It is NOT close to 1: the
     # highest-frequency mode is damped by |1 - 2a| (0.74 for n = 3, 0.48 for
@@ -209,21 +218,37 @@ def test_global_error_obeys_angle_accumulation_bound(n: int) -> None:
     g = np.abs(a0 + a_dec * np.exp(1j * theta) + a_inc * np.exp(-1j * theta))
     assert kappa == pytest.approx(g.max() / g.min(), rel=1e-9)
     print(f"n={n}: kappa(I + dt L) = {kappa:.3f}")
+
+    # Tolerance from the arithmetic, not by hand. Both sides come from stable forms
+    # (cudaq_pde.metrics): the angle is atan2 of the orthogonal residual and the local
+    # angle is arcsin(sqrt(C)) with C = sin^2(angle) from the same residual. Each has an
+    # ABSOLUTE error of a few eps (backward stable; the components of the inputs carry
+    # ~eps rounding): E = 4 eps per quantity. The recursion
+    #   bound_s = arcsin(kappa sin bound_{s-1}) + a_s
+    # multiplies an earlier error by at most kappa per step, so bound_s has error
+    # <= E sum_{k<=s} kappa^k, and the compared angle adds E. At step 0 the two sides
+    # are mathematically equal and must agree to within tol_0 = 2 E.
+    eps = np.finfo(float).eps
+    big_e = 4 * eps
+
+    def tol_at(s: int) -> float:
+        return big_e * (1.0 + sum(kappa**k for k in range(s + 1)))
+
     bound = np.arcsin(np.sqrt(res.costs[0]))
+    assert abs(angle[0] - bound) <= tol_at(0), (angle[0], bound)  # equality case
     for s in range(steps + 1):
         if s > 0:
             bound = np.arcsin(min(1.0, kappa * np.sin(bound))) + np.arcsin(
                 np.sqrt(res.costs[s])
             )
-        angle = np.arcsin(np.sqrt(max(0.0, 1.0 - fid[s])))
-        assert angle <= bound * (1 + 1e-9) + 1e-12, (s, angle, bound)
+        assert angle[s] <= bound + tol_at(s), (s, angle[s], bound)
 
 
 @pytest.mark.slow
 @pytest.mark.parametrize("n", [3, 4])
 def test_norm_is_tracked_classically(n: int) -> None:
     depth, tol, steps, _, max_l2 = MAIN[n]
-    res, ref, _, _ = run(n, depth, tol, steps)
+    res, ref = run(n, depth, tol, steps)[:2]
     ref_norm = np.linalg.norm(ref, axis=1)
     # The optimizer may land on psi or -psi (same cost, a global phase), so the
     # tracked norm is signed: observed positive for n = 3 and negative (-4.3) for
@@ -240,7 +265,7 @@ def test_norm_is_tracked_classically(n: int) -> None:
 def test_optimization_error_is_below_discretization_error(n: int, capsys) -> None:
     """Report FD-Euler vs spectral (discretization) separately from the optimizer."""
     depth, tol, steps, *_ = MAIN[n]
-    res, ref, _, l2 = run(n, depth, tol, steps)
+    res, ref, _, _, l2 = run(n, depth, tol, steps)
     T = steps * DT
     spec = classical.evolve_spectral(u0_of(n), T, C_ADV, NU, L)
     rel = lambda a: np.linalg.norm(a - spec) / np.linalg.norm(spec)  # noqa: E731
@@ -279,7 +304,7 @@ def test_cost_evaluations_are_reported_and_counted(n: int, monkeypatch) -> None:
 
 
 def _final_infidelity(n, depth, tol, steps) -> float:
-    return float(1.0 - run(n, depth, tol, steps)[2][-1])
+    return float(run(n, depth, tol, steps).infid[-1])
 
 
 @pytest.mark.slow
@@ -309,7 +334,7 @@ def test_convergence_vs_optimizer_tolerance_n3(capsys) -> None:
     1e-2 .. 1e-10; the last two coincide (finite-difference gradient floor)."""
     tols = [1e-2, 1e-3, 1e-4, 1e-6, 1e-8, 1e-10]
     inf = [_final_infidelity(3, 2, t, 3) for t in tols]
-    cost = [float(run(3, 2, t, 3)[0].costs[-1]) for t in tols]
+    cost = [float(run(3, 2, t, 3).res.costs[-1]) for t in tols]
     for t, i, c in zip(tols, inf, cost, strict=True):
         print(f"tol={t:g}: final infidelity {i:.1e}, final cost {c:.1e}")
     assert inf[0] > 1e-5
@@ -325,13 +350,13 @@ def test_convergence_vs_optimizer_tolerance_n3(capsys) -> None:
 
 @pytest.mark.slow
 def test_same_seed_is_deterministic_and_other_seed_agrees_physically() -> None:
-    a, _, _, _ = run(3, 2, 1e-6, 3, seed=0)
+    a = run(3, 2, 1e-6, 3, seed=0).res
     again = V.evolve_variational(
         u0_of(3), DT, 3, C_ADV, NU, L, depth=2, seed=0, tol=1e-6
     )
     np.testing.assert_allclose(again.thetas, a.thetas, rtol=0, atol=1e-12)
     np.testing.assert_array_equal(again.nfev, a.nfev)
-    b, _, _, _ = run(3, 2, 1e-6, 3, seed=5)
+    b = run(3, 2, 1e-6, 3, seed=5).res
     assert not np.allclose(b.thetas, a.thetas, atol=1e-3)  # different path ...
     assert np.max(np.abs(b.fields - a.fields)) < 1e-4  # ... same physics
 
@@ -346,12 +371,12 @@ def test_init_theta_is_seeded() -> None:
 @pytest.mark.slow
 def test_cobyla_works_but_is_much_weaker(capsys) -> None:
     """Observed: COBYLA stops at maxiter (300) every step, infidelity ~1e-4."""
-    res, _, fid, l2 = run(3, 2, 1e-6, 3, method="COBYLA", maxiter=300)
-    print(_table("n=3 COBYLA", res, fid, l2))
+    res, _, _, infid, l2 = run(3, 2, 1e-6, 3, method="COBYLA", maxiter=300)
+    print(_table("n=3 COBYLA", res, infid, l2))
     assert np.all(res.nfev <= 300 + 1)
-    assert np.all(1.0 - fid < 1e-2)
-    lbfgs = run(3, 2, 1e-6, 3)[2]
-    assert (1.0 - fid[-1]) > 100 * (1.0 - lbfgs[-1])
+    assert np.all(infid < 1e-2)
+    lbfgs = run(3, 2, 1e-6, 3).infid
+    assert infid[-1] > 100 * lbfgs[-1]
     again = run(3, 2, 1e-6, 3, method="COBYLA", maxiter=300)[0]
     np.testing.assert_allclose(again.thetas, res.thetas, atol=1e-12)
 

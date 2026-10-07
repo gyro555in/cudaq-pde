@@ -36,17 +36,17 @@ def run(n: int, depth: int, tol: float, steps: int, method: str = "L-BFGS-B"):
     res = V.evolve_variational(
         u0_of(n), DT, steps, C_ADV, NU, L, depth=depth, seed=0, tol=tol, method=method
     )
-    fid, l2 = V.compare_to_reference(res, ref)
-    return res, ref, fid, l2
+    _, infid, l2 = V.reference_errors(res, ref)
+    return res, ref, infid, l2
 
 
 def per_step_table(n: int, depth: int, tol: float, steps: int) -> dict:
-    res, ref, fid, l2 = run(n, depth, tol, steps)
+    res, ref, infid, l2 = run(n, depth, tol, steps)
     print(f"\nn={n} depth={depth} tol={tol:g} params={V.num_params(n, depth)}")
     print(" step       1-F        L2       cost    nfev   nit        norm")
     for s in range(steps + 1):
         print(
-            f" {s:4d}  {1 - fid[s]:.3e}  {l2[s]:.3e}  {res.costs[s]:.3e}  "
+            f" {s:4d}  {infid[s]:.3e}  {l2[s]:.3e}  {res.costs[s]:.3e}  "
             f"{res.nfev[s]:6d}  {res.nit[s]:4d}  {res.norms[s]:+.6f}"
         )
     T = steps * DT
@@ -67,7 +67,7 @@ def per_step_table(n: int, depth: int, tol: float, steps: int) -> dict:
         "n": n,
         "depth": depth,
         "tol": tol,
-        "infidelity": (1 - fid).tolist(),
+        "infidelity": infid.tolist(),
         "l2": l2.tolist(),
         "cost": res.costs.tolist(),
         "nfev": res.nfev.tolist(),
@@ -82,15 +82,15 @@ def depth_sweep(n: int, depths: list[int], tol: float, steps: int) -> list[dict]
     print(" depth params  1-F(final)  L2(final)  nfev(total)")
     rows = []
     for d in depths:
-        res, _, fid, l2 = run(n, d, tol, steps)
+        res, _, infid, l2 = run(n, d, tol, steps)
         print(
-            f" {d:5d} {V.num_params(n, d):6d}  {1 - fid[-1]:.3e}  {l2[-1]:.3e}"
+            f" {d:5d} {V.num_params(n, d):6d}  {infid[-1]:.3e}  {l2[-1]:.3e}"
             f"  {int(res.nfev.sum()):8d}"
         )
         rows.append(
             {
                 "depth": d,
-                "infidelity": float(1 - fid[-1]),
+                "infidelity": float(infid[-1]),
                 "l2": float(l2[-1]),
                 "nfev": int(res.nfev.sum()),
             }
@@ -103,15 +103,15 @@ def tol_sweep(n: int, depth: int, tols: list[float], steps: int) -> list[dict]:
     print("      tol  1-F(final)  L2(final)  cost(final)  nfev(total)")
     rows = []
     for t in tols:
-        res, _, fid, l2 = run(n, depth, t, steps)
+        res, _, infid, l2 = run(n, depth, t, steps)
         print(
-            f" {t:8.0e}  {1 - fid[-1]:.3e}  {l2[-1]:.3e}  {res.costs[-1]:.3e}"
+            f" {t:8.0e}  {infid[-1]:.3e}  {l2[-1]:.3e}  {res.costs[-1]:.3e}"
             f"  {int(res.nfev.sum()):8d}"
         )
         rows.append(
             {
                 "tol": t,
-                "infidelity": float(1 - fid[-1]),
+                "infidelity": float(infid[-1]),
                 "l2": float(l2[-1]),
                 "cost": float(res.costs[-1]),
                 "nfev": int(res.nfev.sum()),

@@ -7,6 +7,8 @@ the field represented by a set of angles without touching a simulator.
 
 import numpy as np
 
+from cudaq_pde.metrics import deterministic_dot, infidelity
+
 
 def apply_ry(psi: np.ndarray, n: int, qubit: int, theta: float) -> np.ndarray:
     """RY(theta) on ``qubit``; qubit 0 is the last axis (least significant bit)."""
@@ -46,7 +48,9 @@ def numpy_ansatz(n: int, thetas: np.ndarray, depth: int) -> np.ndarray:
 def exact_cost_and_overlap(
     n: int, theta: np.ndarray, depth: int, b: np.ndarray
 ) -> tuple[float, float]:
-    """``C = 1 - <psi|b>^2 / ||b||^2`` and ``<psi|b>`` for the ansatz state ``psi``."""
+    """Cost ``C = 1 - <psi|b>^2 / ||b||^2`` and the overlap ``<psi|b>``.
+
+    ``C`` is computed as ``sin^2`` of the angle (stable, see :mod:`cudaq_pde.metrics`).
+    """
     psi = numpy_ansatz(n, theta, depth)
-    overlap = float(psi @ b)
-    return 1.0 - overlap**2 / float(b @ b), overlap
+    return infidelity(psi, b), float(deterministic_dot(psi, b))

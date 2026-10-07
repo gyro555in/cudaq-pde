@@ -23,6 +23,12 @@ All notable changes to this project are documented here. The format follows
   the GPU sbatch pass it. The default login-node run drops from 125 s to 39 s of CPU.
 
 ### Changed
+- Angles and infidelities between nearly equal states are computed stably
+  (`cudaq_pde.metrics`: `atan2` of the orthogonal residual) instead of `1 - F`, in the
+  variational cost, the reference comparison, the numpy ansatz cost, the cost statistics
+  and the report scripts. `variational.compare_to_reference` (which returned a fidelity)
+  is replaced by `reference_errors`, returning `(angle, infidelity, l2)`. The variational
+  cost near the optimum is now accurate down to `C ~ 1e-30` instead of about 1e-16.
 - One vocabulary for the cyclic shifts everywhere: `classical.increment` and
   `classical.decrement` (defined as `np.roll(u, +1)` and `np.roll(u, -1)`) replace
   the `S+` / `S-` notation in code and docs. `fd_euler_coefficients` returns the

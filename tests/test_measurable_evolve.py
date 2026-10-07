@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from cudaq_pde import classical, encoding
+from cudaq_pde.metrics import infidelity
 from cudaq_pde.solvers import measurable
 from cudaq_pde.solvers import variational as V
 from cudaq_pde.solvers.ansatz_numpy import numpy_ansatz
@@ -64,7 +65,7 @@ def run(shots: int, seed: int = 1):
     ref_dir = ref / np.linalg.norm(ref, axis=1)[:, None]
     infid = np.array(
         [
-            1 - (numpy_ansatz(N, th, DEPTH) @ r) ** 2
+            infidelity(numpy_ansatz(N, th, DEPTH), r)
             for th, r in zip(res.thetas, ref_dir, strict=True)
         ]
     )

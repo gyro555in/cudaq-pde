@@ -255,4 +255,14 @@ ground truth for every test.
   Kernel gate names (h, cx, ...) look undefined to ruff, so F821 is ignored
   per file only for `*_kernels.py` via `[tool.ruff.lint.per-file-ignores]`
   in pyproject.toml. Do not ignore F821 anywhere else.
+- Never compute an angle or infidelity between nearly equal states as `1 - F` or
+  `arccos/arcsin(sqrt(1 - F))`: the subtraction cancels (absolute error ~eps, so relative
+  error eps/theta^2; the angle has an absolute floor sqrt(eps) ~ 1.5e-8). Use
+  `cudaq_pde.metrics` (`state_angle(s)`, `infidelity/infidelities` = sin^2 of an atan2
+  of the orthogonal residual, backward stable to a few eps absolute; sums via `np.sum`,
+  not BLAS dots, for run-to-run determinism). float64 cannot do better than eps ABSOLUTE
+  for generic stored vectors (relative eps only for exactly representable inputs).
+  `variational.reference_errors` returns `(angle, infidelity, l2)`. Tolerances in tests
+  that compare such quantities must come from this precision (a few eps), see
+  `test_global_error_obeys_angle_accumulation_bound`.
 - Writing style in docs/README: no em dashes.
