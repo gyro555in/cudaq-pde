@@ -9,6 +9,7 @@ import cudaq
 import numpy as np
 import pytest
 
+from cudaq_pde.solvers.spectral import shift_angles
 from shift_test_kernels import apply_shift_variant
 
 TOL = 1e-12
@@ -38,10 +39,11 @@ def work_qubits(n: int, variant: str) -> int:
 def shift_matrix(n: int, kind: int) -> np.ndarray:
     """Matrix of the kernel on the system register (ancillas must return to |0>)."""
     N, m = 2**n, work_qubits(n, KINDS[kind][0])
+    angles = shift_angles(n, KINDS[kind][1])  # only used by the QFT form
     cols = []
     for j in range(N):
         bits = [(j >> b) & 1 for b in range(n)]
-        state = np.array(cudaq.get_state(apply_shift_variant, n, m, bits, kind))
+        state = np.array(cudaq.get_state(apply_shift_variant, n, m, bits, kind, angles))
         sys_part, rest = state[:N], state[N:]
         assert np.max(np.abs(rest)) < TOL, "ancilla not returned to |0>"
         cols.append(sys_part)

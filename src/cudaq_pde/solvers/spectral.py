@@ -43,6 +43,22 @@ def phase_angles(
     return [-ct * w for w in weights], -ct * 2 ** (n - 1)
 
 
+def shift_angles(n: int, direction: int) -> list[float]:
+    """R1 angles of a cyclic shift by one grid cell, as a spectral circuit.
+
+    A shift is advection by one cell: ``c * dt = direction * L / N``, so the phase
+    factor ``exp(-i c (2 pi / L) dt k) = exp(-+ 2 pi i k / N)`` and the angles are
+    :func:`phase_angles` with that ``c * dt``. ``direction = +1`` is the
+    ``increment`` (``np.roll(u, +1)``) and ``-1`` the ``decrement``. With the
+    "negative" Nyquist convention (the one these angles implement) the result is an
+    exact permutation. The angles are independent of ``L``.
+    """
+    if direction not in (+1, -1):
+        raise ValueError(f"direction must be +1 or -1, got {direction}")
+    angles, _ = phase_angles(n, 1.0, TWO_PI, direction * TWO_PI / 2**n)
+    return angles
+
+
 def evolve_state(
     psi: NDArray[np.complexfloating],
     c: float,

@@ -5,26 +5,25 @@ import cudaq
 from cudaq_pde.solvers.shift_kernels import (
     decrement_ladder,
     decrement_mcx,
-    decrement_qft,
     increment_ladder,
     increment_mcx,
-    increment_qft,
+    shift_qft,
 )
 
 
 @cudaq.kernel
-def apply_shift_variant(n: int, m: int, bits: list[int], kind: int):
-    """kind: 0/1 inc/dec qft, 2/3 inc/dec mcx, 4/5 inc/dec ladder; m work qubits."""
+def apply_shift_variant(
+    n: int, m: int, bits: list[int], kind: int, angles: list[float]
+):
+    """kind: 0/1 inc/dec qft (with matching angles), 2/3 mcx, 4/5 ladder; m work."""
     q = cudaq.qvector(n + m)
     sys = q.front(n)
     work = q.back(m)
     for b in range(n):
         if bits[b] == 1:
             x(sys[b])
-    if kind == 0:
-        increment_qft(sys)
-    if kind == 1:
-        decrement_qft(sys)
+    if kind == 0 or kind == 1:
+        shift_qft(sys, angles)
     if kind == 2:
         increment_mcx(sys)
     if kind == 3:

@@ -69,6 +69,20 @@ def phase_layer_mirrored(q: cudaq.qview, angles: list[float]):
 
 
 @cudaq.kernel
+def controlled_phase_layer_mirrored(
+    ctl: cudaq.qubit, q: cudaq.qview, angles: list[float]
+):
+    """:func:`phase_layer_mirrored` with every phase controlled on ``ctl``.
+
+    Used by the LCU shifts: ``c-(QFT D QFT-dagger) = QFT (c-D) QFT-dagger``, so only
+    the phase layer needs the control.
+    """
+    n = q.size()
+    for b in range(n):
+        r1.ctrl(angles[b], ctl, q[n - 1 - b])
+
+
+@cudaq.kernel
 def nyquist_phase(q: cudaq.qview, phi: float, mirrored: bool):
     """Phase ``exp(i phi)`` on the single Nyquist basis state.
 

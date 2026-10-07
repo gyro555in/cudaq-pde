@@ -17,8 +17,11 @@ that ancilla bit set).
 
 import cudaq
 
-from cudaq_pde.solvers.shift_kernels import TWO_PI
-from cudaq_pde.solvers.spectral_kernels import iqft_b, qft_b
+from cudaq_pde.solvers.spectral_kernels import (
+    controlled_phase_layer_mirrored,
+    iqft_b,
+    qft_b,
+)
 from cudaq_pde.solvers.variational_kernels import hea_ry_on
 
 
@@ -41,24 +44,22 @@ def lcu_unprepare(anc: cudaq.qview, theta_h: float, theta_0: float):
 
 
 @cudaq.kernel
-def select_shifts_qft(sys: cudaq.qview, anc: cudaq.qview):
+def select_shifts_qft(
+    sys: cudaq.qview,
+    anc: cudaq.qview,
+    dec_angles: list[float],
+    inc_angles: list[float],
+):
     """Controlled decrement (anc[0]) and increment (anc[1]) in one QFT sandwich.
 
     ``c-(QFT D QFT-dagger) = QFT (c-D) QFT-dagger``, so both controlled shifts share
-    the two QFTs and only the ``2n`` phase gates are controlled.
+    the two QFTs and only the phase layers (the CP3 ``phase_layer_mirrored``, here
+    controlled) carry the ancilla controls. Angles: ``spectral.shift_angles(n, -1)``
+    for ``dec_angles`` and ``spectral.shift_angles(n, +1)`` for ``inc_angles``.
     """
-    n = sys.size()
     iqft_b(sys)
-    ang = TWO_PI
-    for _ in range(n):
-        ang = ang / 2.0
-    for b in range(n):
-        a = ang
-        if b == n - 1:
-            a = -ang
-        r1.ctrl(a, anc[0], sys[n - 1 - b])
-        r1.ctrl(-a, anc[1], sys[n - 1 - b])
-        ang = ang * 2.0
+    controlled_phase_layer_mirrored(anc[0], sys, dec_angles)
+    controlled_phase_layer_mirrored(anc[1], sys, inc_angles)
     qft_b(sys)
 
 
@@ -116,6 +117,8 @@ def lcu_block(
     prep: list[float],
     neg: list[int],
     select_kind: int,
+    dec_angles: list[float],
+    inc_angles: list[float],
 ):
     """PREPARE, sign Zs, SELECT, PREPARE-dagger on the register ``q``.
 
@@ -131,7 +134,7 @@ def lcu_block(
     if neg[1] == 1:
         z(anc[1])
     if select_kind == 0:
-        select_shifts_qft(sys, anc)
+        select_shifts_qft(sys, anc, dec_angles, inc_angles)
     if select_kind == 1:
         select_shifts_ladder(sys, anc, q[n + 2 : 2 * n + 1])
     lcu_unprepare(anc, prep[0], prep[1])
@@ -146,6 +149,8 @@ def lcu_target(
     neg: list[int],
     select_kind: int,
     n_work: int,
+    dec_angles: list[float],
+    inc_angles: list[float],
 ):
     """Ansatz state ``A(theta_prev)|0>`` followed by the LCU block.
 
@@ -155,7 +160,7 @@ def lcu_target(
     """
     q = cudaq.qvector(n + 2 + n_work)
     hea_ry_on(q.front(n), theta_prev, depth)
-    lcu_block(q, n, prep, neg, select_kind)
+    lcu_block(q, n, prep, neg, select_kind, dec_angles, inc_angles)
 
 
 @cudaq.kernel
@@ -165,7 +170,9 @@ def lcu_block_circuit(
     neg: list[int],
     select_kind: int,
     n_work: int,
+    dec_angles: list[float],
+    inc_angles: list[float],
 ):
     """The LCU block alone on fresh qubits (resource counting, no ansatz)."""
     q = cudaq.qvector(n + 2 + n_work)
-    lcu_block(q, n, prep, neg, select_kind)
+    lcu_block(q, n, prep, neg, select_kind, dec_angles, inc_angles)

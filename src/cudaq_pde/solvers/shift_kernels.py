@@ -11,10 +11,10 @@ The finite-difference code, the LCU preparation and these kernels all use this o
 vocabulary; the tests compare the kernels with ``classical.increment`` and
 ``classical.decrement`` on every basis state. Three implementations:
 
-``*_qft``
-    ``QFT (diagonal phases) QFT-dagger`` with the spectral circuit of
-    :mod:`spectral_kernels` (phases ``exp(-+ 2 pi i k / N)``, "negative" Nyquist
-    convention, which is exact for a permutation). No ancilla.
+``shift_qft``
+    Advection by one grid cell with the CP3 spectral kernels (phases
+    ``exp(-+ 2 pi i k / N)``, "negative" Nyquist convention, which is exact for a
+    permutation); the angles come from :func:`spectral.shift_angles`. No ancilla.
 ``*_mcx``
     Cascade of multi-controlled X: bit ``i`` flips iff all lower bits are 1,
     applied from the top bit down. No ancilla in the source (the compiler may add
@@ -26,42 +26,21 @@ vocabulary; the tests compare the kernels with ``classical.increment`` and
 
 import cudaq
 
-from cudaq_pde.solvers.spectral_kernels import iqft_b, qft_b
-
-TWO_PI = 6.283185307179586
+from cudaq_pde.solvers.spectral_kernels import iqft_b, phase_layer_mirrored, qft_b
 
 
 @cudaq.kernel
-def increment_qft(q: cudaq.qview):
-    """``|j> -> |j+1>`` as ``QFT D QFT-dagger`` (swap-free, mirrored phases)."""
-    n = q.size()
-    iqft_b(q)
-    ang = -TWO_PI
-    for _ in range(n):
-        ang = ang / 2.0
-    for b in range(n):
-        a = ang
-        if b == n - 1:
-            a = -ang
-        r1(a, q[n - 1 - b])
-        ang = ang * 2.0
-    qft_b(q)
+def shift_qft(q: cudaq.qview, angles: list[float]):
+    """``QFT (phases) QFT-dagger``: a shift by one cell as the CP3 spectral circuit.
 
-
-@cudaq.kernel
-def decrement_qft(q: cudaq.qview):
-    """``|j> -> |j-1>``: the same circuit with all phases negated."""
-    n = q.size()
+    This is :func:`spectral_kernels.spectral_advection_on` without the Nyquist
+    correction, built from the same ``iqft_b``, ``phase_layer_mirrored`` and ``qft_b``.
+    ``angles = spectral.shift_angles(n, +1)`` gives the ``increment`` and
+    ``spectral.shift_angles(n, -1)`` the ``decrement``; a wrong sign gives the other
+    shift, which the tests against ``np.roll`` catch.
+    """
     iqft_b(q)
-    ang = TWO_PI
-    for _ in range(n):
-        ang = ang / 2.0
-    for b in range(n):
-        a = ang
-        if b == n - 1:
-            a = -ang
-        r1(a, q[n - 1 - b])
-        ang = ang * 2.0
+    phase_layer_mirrored(q, angles)
     qft_b(q)
 
 
@@ -128,18 +107,17 @@ def decrement_ladder(q: cudaq.qview, work: cudaq.qview):
 
 
 @cudaq.kernel
-def shift_circuit(n: int, m: int, kind: int):
+def shift_circuit(n: int, m: int, kind: int, angles: list[float]):
     """One shift on ``n`` fresh qubits plus ``m`` work qubits (resource counting).
 
-    ``kind``: 0/1 increment/decrement QFT, 2/3 MCX cascade, 4/5 ancilla ladder.
+    ``kind``: 0/1 increment/decrement QFT (``angles`` must be the matching
+    ``spectral.shift_angles``), 2/3 MCX cascade, 4/5 ancilla ladder.
     """
     q = cudaq.qvector(n + m)
     sys = q.front(n)
     work = q.back(m)
-    if kind == 0:
-        increment_qft(sys)
-    if kind == 1:
-        decrement_qft(sys)
+    if kind == 0 or kind == 1:
+        shift_qft(sys, angles)
     if kind == 2:
         increment_mcx(sys)
     if kind == 3:

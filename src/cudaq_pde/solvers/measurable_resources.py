@@ -18,7 +18,8 @@ import numpy as np
 
 from cudaq_pde.solvers import lcu
 from cudaq_pde.solvers.lcu_kernels import lcu_block_circuit
-from cudaq_pde.solvers.shift_kernels import TWO_PI, shift_circuit
+from cudaq_pde.solvers.shift_kernels import shift_circuit
+from cudaq_pde.solvers.spectral import shift_angles
 from cudaq_pde.solvers.spectral_resources import qasm_stats
 
 SHIFT_KINDS = {
@@ -87,7 +88,10 @@ def _native(res) -> dict:
 
 def shift_native(n: int, variant: str, direction: int = +1) -> dict:
     kind = SHIFT_KINDS[(variant, direction)]
-    return _native(cudaq.estimate_resources(shift_circuit, n, _work(variant, n), kind))
+    angles = shift_angles(n, direction)
+    return _native(
+        cudaq.estimate_resources(shift_circuit, n, _work(variant, n), kind, angles)
+    )
 
 
 def lcu_native(n: int, dt: float, c: float, nu: float, select: str) -> dict:
@@ -100,6 +104,8 @@ def lcu_native(n: int, dt: float, c: float, nu: float, select: str) -> dict:
             plan.neg,
             lcu.SELECT_KINDS[select],
             lcu.n_work(select, n),
+            plan.dec_angles,
+            plan.inc_angles,
         )
     )
 
@@ -129,18 +135,11 @@ def _iqft_b(k, q) -> None:
         k.h(q[a])
 
 
-def _phase_angles(n: int, sign: int) -> list[float]:
-    """Angle for Fourier bit ``b`` (two's-complement weight), shift +-1."""
-    ct = TWO_PI / 2**n
-    weights = [2**b for b in range(n - 1)] + [-(2 ** (n - 1))]
-    return [-sign * ct * w for w in weights]
-
-
 def _increment_mirror(k, q, variant: str, work=None) -> None:
     n = len(q)
     if variant == "qft":
         _iqft_b(k, q)
-        for b, a in enumerate(_phase_angles(n, +1)):
+        for b, a in enumerate(shift_angles(n, +1)):
             k.r1(a, q[n - 1 - b])
         _qft_b(k, q)
     elif variant == "mcx":
@@ -235,9 +234,9 @@ def build_lcu_mirror(n: int, dt: float, c: float, nu: float, select: str):
         k.z(a1)
     if select == "qft":
         _iqft_b(k, sys)
-        for b, ang in enumerate(_phase_angles(n, -1)):  # decrement phases, ctl a0
+        for b, ang in enumerate(plan.dec_angles):  # decrement phases, ctl a0
             k.cr1(ang, a0, sys[n - 1 - b])
-        for b, ang in enumerate(_phase_angles(n, +1)):  # increment phases, ctl a1
+        for b, ang in enumerate(plan.inc_angles):  # increment phases, ctl a1
             k.cr1(ang, a1, sys[n - 1 - b])
         _qft_b(k, sys)
     else:

@@ -42,6 +42,8 @@ def run_lcu(n, dt, c, nu, depth, theta, kind):
             plan.neg,
             lcu.SELECT_KINDS[kind],
             lcu.n_work(kind, n),
+            plan.dec_angles,
+            plan.inc_angles,
         )
     )
     # STATEVECTOR CHECK: ancilla qubits n, n+1 are the high bits of the index (work

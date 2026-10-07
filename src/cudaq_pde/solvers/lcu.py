@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from cudaq_pde import classical
+from cudaq_pde.solvers.spectral import shift_angles
 
 SELECT_KINDS = {"qft": 0, "ladder": 1}
 
@@ -31,6 +32,8 @@ class LCUPlan:
     lam: float  # sum of |coefficients|
     prep: list[float]  # [theta_h, theta_0]
     neg: list[int]  # [a_dec < 0, a_inc < 0]
+    dec_angles: list[float]  # phase layer of the decrement (QFT SELECT)
+    inc_angles: list[float]  # phase layer of the increment (QFT SELECT)
 
     def success_probability(self, b_norm_sq: float) -> float:
         """``||b||^2 / lambda^2`` for the unnormalized target ``b``."""
@@ -54,4 +57,6 @@ def lcu_plan(n: int, dt: float, c: float, nu: float, L: float) -> LCUPlan:
         lam=float(lam),
         prep=[float(theta_h), float(theta_0)],
         neg=[int(a_dec < 0.0), int(a_inc < 0.0)],
+        dec_angles=shift_angles(n, -1),
+        inc_angles=shift_angles(n, +1),
     )

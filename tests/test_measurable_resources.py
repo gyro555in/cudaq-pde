@@ -10,6 +10,7 @@ from cudaq_pde import classical
 from cudaq_pde.solvers import lcu
 from cudaq_pde.solvers import measurable_resources as mr
 from cudaq_pde.solvers.lcu_kernels import lcu_target
+from cudaq_pde.solvers.spectral import shift_angles
 from shift_test_kernels import apply_shift_variant
 
 NS = range(2, 7)
@@ -98,7 +99,9 @@ def test_shift_mirror_state_equals_kernel_state(variant: str) -> None:
     n, bits = 3, [1, 1, 0]
     kind = mr.SHIFT_KINDS[(variant, +1)]
     m = mr._work(variant, n)
-    kernel_state = np.array(cudaq.get_state(apply_shift_variant, n, m, bits, kind))
+    kernel_state = np.array(
+        cudaq.get_state(apply_shift_variant, n, m, bits, kind, shift_angles(n, +1))
+    )
     mirror_state = np.array(
         cudaq.get_state(mr.build_shift_mirror(n, variant, with_input_bits=bits))
     )
@@ -123,6 +126,8 @@ def test_lcu_mirror_state_equals_kernel_state(select: str) -> None:
             plan.neg,
             lcu.SELECT_KINDS[select],
             lcu.n_work(select, n),
+            plan.dec_angles,
+            plan.inc_angles,
         )
     )
     mirror_state = np.array(
