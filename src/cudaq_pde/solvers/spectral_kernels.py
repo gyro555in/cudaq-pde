@@ -164,3 +164,74 @@ def spectral_advection_circuit(
     """
     q = cudaq.qvector(n)
     spectral_advection_on(q, angles, phi, zero, swaps, steps)
+
+
+@cudaq.kernel
+def spectrum_circuit(
+    amps: list[complex],
+    angles: list[float],
+    phi: float,
+    zero: bool,
+    swaps: bool,
+    steps: int,
+):
+    """Load ``amps``, evolve (:func:`spectral_advection_on`), then swap-free QFT-dagger.
+
+    Sampling the register gives the power spectrum: ``iqft_b = R F-``, so the outcome
+    ``r = sum_q s[q] 2**q`` of a bitstring ``s`` is the BIT-REVERSED FFT index and
+    ``P(r) = |u_hat_{rev(r)}|^2 / (N ||u||^2)``. The evolution ends with a QFT and this
+    circuit starts with a QFT-dagger, which cancel; :func:`spectrum_circuit_fused`
+    drops both. Loading ``amps`` is the simulator convenience of CP2 (it costs
+    ``O(2**n)`` gates on hardware), not a scalable loader.
+    """
+    q = cudaq.qvector(amps)
+    spectral_advection_on(q, angles, phi, zero, swaps, steps)
+    iqft_b(q)
+
+
+@cudaq.kernel
+def spectrum_circuit_fused(
+    amps: list[complex],
+    angles: list[float],
+    phi: float,
+    zero: bool,
+    steps: int,
+):
+    """Same measurement distribution as :func:`spectrum_circuit` without the QFT pair.
+
+    ``QFT-dagger (QFT D QFT-dagger)^steps`` equals ``D^steps QFT-dagger`` in the
+    mirrored layout, so only the QFT-dagger and the phase layers remain.
+    """
+    q = cudaq.qvector(amps)
+    iqft_b(q)
+    for _ in range(steps):
+        phase_layer_mirrored(q, angles)
+        if zero:
+            nyquist_phase(q, phi, True)
+
+
+@cudaq.kernel
+def spectrum_circuit_gates(
+    n: int,
+    angles: list[float],
+    phi: float,
+    zero: bool,
+    swaps: bool,
+    steps: int,
+    fused: bool,
+):
+    """The measurement circuits without amplitude loading (resource counting only).
+
+    ``cudaq.estimate_resources`` cannot count a kernel that loads data from an
+    amplitude vector, so this wrapper applies the same gates to ``n`` fresh qubits.
+    """
+    q = cudaq.qvector(n)
+    if fused:
+        iqft_b(q)
+        for _ in range(steps):
+            phase_layer_mirrored(q, angles)
+            if zero:
+                nyquist_phase(q, phi, True)
+    else:
+        spectral_advection_on(q, angles, phi, zero, swaps, steps)
+        iqft_b(q)
