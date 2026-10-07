@@ -206,11 +206,8 @@ def _controlled_decrement_ladder_mirror(k, ctl, q, work) -> None:
     k.cx([ctl, q[0]], work[0])
 
 
-def build_lcu_mirror(n: int, dt: float, c: float, nu: float, select: str):
-    """Builder kernel of the LCU block (system starts in |0...0>)."""
-    plan = lcu.lcu_plan(n, dt, c, nu, 2 * np.pi)
-    k = cudaq.make_kernel()
-    q = k.qalloc(n + 2 + lcu.n_work(select, n))
+def _lcu_block_mirror(k, q, n: int, plan: lcu.LCUPlan, select: str) -> None:
+    """Append the LCU block (PREPARE, SELECT, PREPARE-dagger) to builder ``k``."""
     sys = [q[i] for i in range(n)]
     a0, a1 = q[n], q[n + 1]
     th_h, th_0 = plan.prep
@@ -244,7 +241,152 @@ def build_lcu_mirror(n: int, dt: float, c: float, nu: float, select: str):
         _controlled_decrement_ladder_mirror(k, a0, sys, work)
         _controlled_increment_ladder_mirror(k, a1, sys, work)
     prepare(-1)
+
+
+def build_lcu_mirror(n: int, dt: float, c: float, nu: float, select: str):
+    """Builder kernel of the LCU block (system starts in |0...0>)."""
+    plan = lcu.lcu_plan(n, dt, c, nu, 2 * np.pi)
+    k = cudaq.make_kernel()
+    q = k.qalloc(n + 2 + lcu.n_work(select, n))
+    _lcu_block_mirror(k, q, n, plan, select)
     return k
+
+
+# ------------------------------------------------- the two cost circuits (6B)
+
+
+def _ansatz_mirror(k, sys, thetas, depth: int, adjoint: bool = False) -> None:
+    """Builder ansatz (``adjoint=True``: reversed order, negated RY angles)."""
+    n = len(sys)
+    ops = [("ry", i, thetas[i]) for i in range(n)]
+    for d in range(depth):
+        ops += [("cx", i, i + 1) for i in range(n - 1)]
+        ops += [("ry", i, thetas[(d + 1) * n + i]) for i in range(n)]
+    if adjoint:
+        ops = [(o[0], o[1], -o[2]) if o[0] == "ry" else o for o in ops[::-1]]
+    for kind, i, v in ops:
+        if kind == "ry":
+            k.ry(v, sys[i])
+        else:
+            k.cx(sys[i], sys[v])
+
+
+def build_cost_b_mirror(
+    n: int, depth: int, plan: lcu.LCUPlan, select: str, thetas=None
+):
+    """Builder mirror of ``lcu_cost_circuit``: A(theta_prev), LCU, A(theta)^dagger."""
+    rng = np.random.default_rng(0)
+    th_prev = thetas[0] if thetas else rng.uniform(-1, 1, n * (depth + 1))
+    th = thetas[1] if thetas else rng.uniform(-1, 1, n * (depth + 1))
+    k = cudaq.make_kernel()
+    q = k.qalloc(n + 2 + lcu.n_work(select, n))
+    sys = [q[i] for i in range(n)]
+    _ansatz_mirror(k, sys, th_prev, depth)
+    _lcu_block_mirror(k, q, n, plan, select)
+    _ansatz_mirror(k, sys, th, depth, adjoint=True)
+    return k
+
+
+def _controlled_ansatz_mirror(k, ctl, sys, thetas, depth: int) -> None:
+    """Ancilla-controlled ansatz: RY -> CRY, CX -> Toffoli."""
+    n = len(sys)
+    for i in range(n):
+        k.cry(thetas[i], ctl, sys[i])
+    for d in range(depth):
+        for i in range(n - 1):
+            k.cx([ctl, sys[i]], sys[i + 1])
+        for i in range(n):
+            k.cry(thetas[(d + 1) * n + i], ctl, sys[i])
+
+
+def _controlled_shift_mirror(k, ctl, sys, angles) -> None:
+    """Controlled QFT-form shift: only the phase layer carries the control."""
+    n = len(sys)
+    _iqft_b(k, sys)
+    for b, ang in enumerate(angles):
+        k.cr1(ang, ctl, sys[n - 1 - b])
+    _qft_b(k, sys)
+
+
+def build_cost_a_mirror(n: int, depth: int, plan: lcu.LCUPlan, shift: str, thetas=None):
+    """Hadamard-test overlap circuit (a): ``<psi(theta)| V |psi(theta_prev)>``.
+
+    Controlled state preparation: the ancilla selects ``A(theta)`` (ancilla 0) or
+    ``V A(theta_prev)`` (ancilla 1); after H, ``P(0) = (1 + Re <a|b>) / 2``. ``shift``
+    is ``"I"``, ``"dec"`` or ``"inc"``.
+    """
+    rng = np.random.default_rng(0)
+    th_prev = thetas[0] if thetas else rng.uniform(-1, 1, n * (depth + 1))
+    th = thetas[1] if thetas else rng.uniform(-1, 1, n * (depth + 1))
+    k = cudaq.make_kernel()
+    q = k.qalloc(n + 1)
+    sys, c = [q[i] for i in range(n)], q[n]
+    k.h(c)
+    k.x(c)
+    _controlled_ansatz_mirror(k, c, sys, th, depth)
+    k.x(c)
+    _controlled_ansatz_mirror(k, c, sys, th_prev, depth)
+    if shift != "I":
+        angles = plan.dec_angles if shift == "dec" else plan.inc_angles
+        _controlled_shift_mirror(k, c, sys, angles)
+    k.h(c)
+    return k
+
+
+def build_step_constant_mirror(n: int, depth: int, plan: lcu.LCUPlan, power: int):
+    """Hadamard test of ``<psi_prev| D^power |psi_prev>`` (per-step constant).
+
+    The ansatz is uncontrolled (the ancilla controls only the shift).
+    """
+    th_prev = np.random.default_rng(0).uniform(-1, 1, n * (depth + 1))
+    k = cudaq.make_kernel()
+    q = k.qalloc(n + 1)
+    sys, c = [q[i] for i in range(n)], q[n]
+    _ansatz_mirror(k, sys, th_prev, depth)
+    k.h(c)
+    _controlled_shift_mirror(k, c, sys, [power * a for a in plan.dec_angles])
+    k.h(c)
+    return k
+
+
+def _mirror_report(kernel) -> dict:
+    res = cudaq.estimate_resources(kernel)
+    nat = _native(res)
+    return {"native": nat, "lowered": lowered(kernel)}
+
+
+def cost_circuit_report(
+    n: int, depth: int, dt: float, c: float, nu: float, select: str = "qft"
+) -> dict:
+    """Counts of cost circuit (b) and of the three overlap circuits of (a)."""
+    plan = lcu.lcu_plan(n, dt, c, nu, 2 * np.pi)
+    b = _mirror_report(build_cost_b_mirror(n, depth, plan, select))
+    a = {
+        v: _mirror_report(build_cost_a_mirror(n, depth, plan, v))
+        for v in ("I", "dec", "inc")
+    }
+    consts = {
+        f"D^{p}": _mirror_report(build_step_constant_mirror(n, depth, plan, p))
+        for p in (1, 2)
+    }
+
+    def total(key: str, sub: str):
+        return sum(r[key][sub] for r in a.values())
+
+    return {
+        "n": n,
+        "depth": depth,
+        "select": select,
+        "b": b,
+        "a_circuits": a,
+        "a_totals_per_cost_evaluation": {
+            "circuits": 3,
+            "two_qubit_native": total("native", "two_qubit_gates"),
+            "multi_qubit_native": total("native", "multi_qubit_gates"),
+            "lowered_cx": total("lowered", "cx"),
+        },
+        "a_step_constants": consts,
+    }
 
 
 def lowered(kernel) -> dict:
