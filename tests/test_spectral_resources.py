@@ -81,3 +81,15 @@ def test_qasm_stats_parser() -> None:
         "depth": 3,
         "qubits": 2,
     }
+
+
+def test_qasm_stats_parser_splits_statements_after_a_reset() -> None:
+    """CUDA-Q 0.16 writes ``reset q[1];cx ...`` on one line; no gate may be lost, and
+    the classical wire of a ``measure`` does not enter the depth."""
+    qasm = (
+        'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[1];\n'
+        "h q[0];\nmeasure q[1] -> c[0];\nreset q[1];cx q[0], q[1];\n"
+        "ry(0.5) q[1];\n"
+    )
+    stats = sr.qasm_stats(qasm)
+    assert stats == {"total_gates": 5, "cx": 1, "depth": 4, "qubits": 2}
