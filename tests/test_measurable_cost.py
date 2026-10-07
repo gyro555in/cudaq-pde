@@ -146,6 +146,7 @@ def test_a_wrong_shift_would_not_match() -> None:
     assert np.max(np.abs(good - bad)) > 1e-3
 
 
+@pytest.mark.slow
 def test_sampled_gradient_is_unbiased() -> None:
     """Mean of repeated sampled gradients within 4 standard errors of the exact one."""
     n, depth, shots, repeats = 3, 1, 2000, 40

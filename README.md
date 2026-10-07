@@ -107,7 +107,8 @@ python examples/advection_diffusion_variational.py --n 3
 
 Both examples report the optimization error (variational against FD-Euler) and the
 discretization error (FD-Euler against the exact spectral solution) separately.
-Tests: `pytest` (CPU) and `pytest --run-gpu -m gpu` on a GPU node.
+Tests: `pytest` (CPU, skips the few slow tests; add `--run-slow` for all) and
+`pytest --run-gpu -m gpu` on a GPU node.
 
 ## Conventions that matter
 

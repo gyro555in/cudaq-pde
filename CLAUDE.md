@@ -41,8 +41,10 @@ Do NOT load any CUDA module; CUDA-Q wheels bring their own runtime.
 ### Install and test
 ```bash
 pip install -e ".[cu12,dev]"   # or [cu13,dev]; install exactly one CUDA-Q variant
-env/pytest_login.sh             # login node (pinned); in a Slurm job use plain pytest
-pytest --run-gpu -m gpu         # GPU tests, only on a GPU node via sbatch
+env/pytest_login.sh             # login node (pinned), skips slow tests: ~39 s CPU
+env/pytest_login.sh --run-slow  # everything except GPU: ~126 s CPU (before commits)
+pytest --run-slow               # inside a Slurm job (plain pytest); CI also uses it
+pytest --run-gpu --run-slow -m gpu   # GPU tests, only on a GPU node via sbatch
 ruff check . && ruff format --check .
 ```
 
@@ -68,6 +70,13 @@ ruff check . && ruff format --check .
 ### Verified
 - A100 GPU (driver 570.158.01): nvidia fp64 target verified to 1e-12 agreement with CPU.
 - See `env/ENVIRONMENT.md` for full details: system, hardware, dependencies, job template.
+
+## Test markers
+- `gpu`: needs a GPU, skipped unless `--run-gpu`. `slow`: a test (or a group sharing
+  cached results) taking more than about 1 s, skipped unless `--run-slow`. Mark new tests
+  slow when they exceed ~1.5 s; CI and sbatch runs pass `--run-slow`. Login-node CPU time
+  of the default run: 125.5 s before the marker, 38.6 s after; with `--run-slow` 126 s.
+  `tests/test_markers.py` tests the mechanism with the repository's real `conftest.py`.
 
 ## Numerical reproducibility (non-negotiable)
 - GPU target always: cudaq.set_target("nvidia", option="fp64").

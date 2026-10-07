@@ -182,6 +182,7 @@ def test_simulator_cost_matches_numpy_and_is_sign_invariant(n: int, depth: int) 
 # ------------------------------------------------------------ per-step error
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("n", [3, 4])
 def test_per_step_fidelity_and_l2_vs_fd_euler(n: int, capsys) -> None:
     depth, tol, steps, max_infid, max_l2 = MAIN[n]
@@ -193,6 +194,7 @@ def test_per_step_fidelity_and_l2_vs_fd_euler(n: int, capsys) -> None:
     assert res.costs[0] < max_infid  # initial-state fit (preparation error)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("n", [3, 4])
 def test_global_error_obeys_angle_accumulation_bound(n: int) -> None:
     depth, tol, steps, *_ = MAIN[n]
@@ -217,6 +219,7 @@ def test_global_error_obeys_angle_accumulation_bound(n: int) -> None:
         assert angle <= bound * (1 + 1e-9) + 1e-12, (s, angle, bound)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("n", [3, 4])
 def test_norm_is_tracked_classically(n: int) -> None:
     depth, tol, steps, _, max_l2 = MAIN[n]
@@ -232,6 +235,7 @@ def test_norm_is_tracked_classically(n: int) -> None:
     assert np.all(np.diff(np.abs(res.norms)) < 0)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("n", [3, 4])
 def test_optimization_error_is_below_discretization_error(n: int, capsys) -> None:
     """Report FD-Euler vs spectral (discretization) separately from the optimizer."""
@@ -250,6 +254,7 @@ def test_optimization_error_is_below_discretization_error(n: int, capsys) -> Non
     assert abs(var_vs_spec - disc) <= l2[-1] * (1 + 1e-9)  # triangle inequality
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("n", [3, 4])
 def test_cost_evaluations_are_reported_and_counted(n: int, monkeypatch) -> None:
     depth, tol, steps, *_ = MAIN[n]
@@ -277,6 +282,7 @@ def _final_infidelity(n, depth, tol, steps) -> float:
     return float(1.0 - run(n, depth, tol, steps)[2][-1])
 
 
+@pytest.mark.slow
 def test_convergence_vs_ansatz_depth_n3(capsys) -> None:
     """Expressibility: observed 5e-2, 3e-3, then <= 1e-11 for depth 0, 1, >= 2."""
     inf = {d: _final_infidelity(3, d, 1e-6, 3) for d in range(5)}
@@ -287,6 +293,7 @@ def test_convergence_vs_ansatz_depth_n3(capsys) -> None:
     assert all(inf[d] < 1e-9 for d in (2, 3, 4))  # saturated at the optimizer floor
 
 
+@pytest.mark.slow
 def test_convergence_vs_ansatz_depth_n4(capsys) -> None:
     """Observed 8e-3, 9e-4, 5e-8, 2e-9 for depth 1..4 (n = 4 has 15 amplitudes)."""
     inf = {d: _final_infidelity(4, d, 1e-5, 2) for d in range(1, 5)}
@@ -296,6 +303,7 @@ def test_convergence_vs_ansatz_depth_n4(capsys) -> None:
     assert inf[3] < 1e-6 and inf[4] < 1e-6
 
 
+@pytest.mark.slow
 def test_convergence_vs_optimizer_tolerance_n3(capsys) -> None:
     """Observed final infidelity 1e-3, 1e-4, 2e-8, 1e-12, 1e-14, 1e-14 for tol
     1e-2 .. 1e-10; the last two coincide (finite-difference gradient floor)."""
@@ -315,6 +323,7 @@ def test_convergence_vs_optimizer_tolerance_n3(capsys) -> None:
 # ------------------------------------------------- determinism, methods, input
 
 
+@pytest.mark.slow
 def test_same_seed_is_deterministic_and_other_seed_agrees_physically() -> None:
     a, _, _, _ = run(3, 2, 1e-6, 3, seed=0)
     again = V.evolve_variational(
@@ -334,6 +343,7 @@ def test_init_theta_is_seeded() -> None:
     assert a.shape == (V.num_params(4, 3),) == (16,)
 
 
+@pytest.mark.slow
 def test_cobyla_works_but_is_much_weaker(capsys) -> None:
     """Observed: COBYLA stops at maxiter (300) every step, infidelity ~1e-4."""
     res, _, fid, l2 = run(3, 2, 1e-6, 3, method="COBYLA", maxiter=300)
@@ -346,6 +356,7 @@ def test_cobyla_works_but_is_much_weaker(capsys) -> None:
     np.testing.assert_allclose(again.thetas, res.thetas, atol=1e-12)
 
 
+@pytest.mark.slow
 def test_restarts_never_worsen_the_initial_fit() -> None:
     one = V.evolve_variational(u0_of(3), DT, 0, C_ADV, NU, L, depth=1, seed=0)
     many = V.evolve_variational(

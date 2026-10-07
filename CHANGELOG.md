@@ -19,6 +19,8 @@ All notable changes to this project are documented here. The format follows
   handled, a fused variant without the cancelling QFT pair, and its shot-noise
   scaling (`benchmarks/spectrum_shots.py`).
 - A structural test that only documented simulator modules call `cudaq.get_state`.
+- A `slow` pytest marker (skipped unless `--run-slow`) for tests over about 1 s; CI and
+  the GPU sbatch pass it. The default login-node run drops from 125 s to 39 s of CPU.
 
 ### Changed
 - One vocabulary for the cyclic shifts everywhere: `classical.increment` and

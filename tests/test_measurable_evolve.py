@@ -17,6 +17,8 @@ from cudaq_pde.solvers import measurable
 from cudaq_pde.solvers import variational as V
 from cudaq_pde.solvers.ansatz_numpy import numpy_ansatz
 
+pytestmark = pytest.mark.slow  # every test samples thousands of circuits
+
 C_ADV, NU, DT, L = 1.0, 0.4, 0.05, classical.TWO_PI
 N, DEPTH, STEPS = 3, 2, 3
 ITERATIONS, LR = 60, 1.0

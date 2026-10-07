@@ -22,4 +22,4 @@ meta = write_metadata("logs/gpu_tests_${SLURM_JOB_ID}_metadata.json")
 print("metadata:", meta)
 PY
 
-pytest --run-gpu -m gpu -v
+pytest --run-gpu --run-slow -m gpu -v

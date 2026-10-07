@@ -31,5 +31,5 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
-      - name: Pytest (qpp-cpu, gpu tests skipped)
-        run: pytest -v
+      - name: Pytest (qpp-cpu, all slow tests, gpu tests skipped)
+        run: pytest -v --run-slow
