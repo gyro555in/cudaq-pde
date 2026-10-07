@@ -12,6 +12,7 @@ cutensor-cu12==2.8.1
 cutensornet-cu12==2.13.0
 cycler==0.12.1
 debugpy==1.8.22
+dill==0.4.1
 executing==2.2.1
 fastrlock==0.8.3
 fonttools==4.66.1
@@ -50,12 +51,15 @@ pyparsing==3.3.3
 pytest==9.1.1
 python-dateutil==2.9.0.post0
 pyzmq==27.2.0
+qiskit==2.5.2
 requests==2.34.2
 ruff==0.16.10
+rustworkx==0.18.1
 scipy==1.18.1
 setuptools==84.0.0
 six==1.17.0
 stack-data==0.6.3
+stevedore==5.9.1
 tornado==6.5.10
 traitlets==5.16.1
 typing_extensions==4.16.0

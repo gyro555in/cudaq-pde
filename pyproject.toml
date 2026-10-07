@@ -19,6 +19,7 @@ dependencies = [
 cu12 = ["cuda-quantum-cu12>=0.16,<0.17"]
 cu13 = ["cuda-quantum-cu13>=0.16,<0.17"]
 dev = ["pytest", "ruff", "matplotlib"]
+aqt = ["qiskit>=2.0,<3"]  # OpenQASM round-trip checks only (no qiskit-aqt)
 
 [project.urls]
 Repository = "https://github.com/gyro555in/cudaq-pde"

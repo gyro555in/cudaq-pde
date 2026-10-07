@@ -241,6 +241,16 @@ mid-circuit measurement. `cudaq.translate` accepts such kernels as OpenQASM 2 an
 `qir-adaptive`, but not as `qir-base`. B2 needs none of this and is the fallback. No QPU
 has run any of these routes.
 
+OpenQASM 2 round trip for AQT-style tooling (AQT is not a CUDA-Q 0.16 target;
+`pip install -e ".[aqt]"` adds Qiskit only, not `qiskit-aqt`;
+`benchmarks/qiskit_roundtrip.py`, n = 3): the spectral circuit, route A, B2 and B1 load in
+Qiskit 2.5.2 with the same gate counts and CX counts as CUDA-Q's lowering, and the
+statevectors agree up to a global phase to 1e-7 (CUDA-Q prints OpenQASM angles with 7
+significant digits, so 1e-12 is not reachable through the text). B1's six mid-circuit
+`measure` and `reset` pairs survive loading and a dump and load round trip, each
+`measure` directly followed by its `reset`. Whether an AQT backend accepts them is not
+checked.
+
 Lowered CX counts (CUDA-Q 0.16 OpenQASM 2 lowering of a builder mirror of the circuit,
 `"negative"` Nyquist, not hardware-native; the `"zero"` convention adds `12n - 22`).
 C is at `sigma = 4` grid cells (width register `q`); every entry equals its closed form

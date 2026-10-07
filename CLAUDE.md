@@ -278,6 +278,11 @@ ruff check . && ruff format --check .
   target emits `qir-base` and removes measurements; Quantinuum's emits adaptive QIR. AQT
   is not a 0.16 target. `cudaq.translate` accepts mid-circuit kernels as OpenQASM 2 and
   `qir-adaptive`; `qir-base` fails. Keep B2 as the fallback.
+- OpenQASM round trip (`benchmarks/qiskit_roundtrip.py`, optional extra `aqt` = Qiskit
+  only, `qiskit-aqt` NOT installed): spectral, A, B2 and B1 at n = 3 load in Qiskit 2.5.2
+  with equal gate and CX counts; statevectors agree to ~1e-7 because CUDA-Q prints
+  OpenQASM angles with `%e` (7 digits); B1's measure+reset pairs survive load and
+  dump/load. AQT backend acceptance of mid-circuit reset is not checked.
 - Route C: the multiplier `g` is the DFT of real weights `w_s` (inverse DFT of `g`,
   signed). Window `s in [-2**(q-1), 2**(q-1))`, `q` minimal with dropped L1 mass at most
   1e-13; LCU `A_L^dagger SELECT A_R` with a signed RY-tree `A_R` and an unsigned `A_L`;

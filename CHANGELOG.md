@@ -40,6 +40,10 @@ All notable changes to this project are documented here. The format follows
 - `benchmarks/mid_circuit_probe.py` and `.sbatch`: mid-circuit measurement and reset
   probe for any target (also with `--emulate`), run on an A100 (`nvidia`, fp64).
 
+- Optional extra `aqt` (Qiskit only) and `benchmarks/qiskit_roundtrip.py`: OpenQASM 2
+  round trip of the spectral, A, B2 and B1 circuits (counts, statevector, mid-circuit
+  measure and reset).
+
 ### Fixed
 - `spectral_resources.qasm_stats` split OpenQASM 2 text by line, but CUDA-Q 0.16 writes
   `reset q[3];cx ...` on one line, so the gate after every reset was not counted. It now
