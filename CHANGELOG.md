@@ -20,7 +20,7 @@ All notable changes to this project are documented here. The format follows
   scaling (`benchmarks/spectrum_shots.py`).
 - A structural test that only documented simulator modules call `cudaq.get_state`.
 - A `slow` pytest marker (skipped unless `--run-slow`) for tests over about 1 s; CI and
-  the GPU sbatch pass it. The default login-node run drops from 125 s to 39 s of CPU.
+  the GPU sbatch pass it. The default login-node run drops from 125 s to about 48 s of CPU after the one-shot tests.
 
 - One-shot advection-diffusion, `QFT-dagger -> advection phases -> block-encoded
   diag(exp(-a m**2)) -> QFT` with post-selected ancillas, in three routes: multiplexed RY

@@ -41,8 +41,8 @@ Do NOT load any CUDA module; CUDA-Q wheels bring their own runtime.
 ### Install and test
 ```bash
 pip install -e ".[cu12,dev]"   # or [cu13,dev]; install exactly one CUDA-Q variant
-env/pytest_login.sh             # login node (pinned), skips slow tests: ~39 s CPU
-env/pytest_login.sh --run-slow  # everything except GPU: ~126 s CPU (before commits)
+env/pytest_login.sh             # login node (pinned), skips slow tests: ~48 s CPU
+env/pytest_login.sh --run-slow  # everything except GPU: ~205 s CPU (before commits; limit 300 s)
 pytest --run-slow               # inside a Slurm job (plain pytest); CI also uses it
 pytest --run-gpu --run-slow -m gpu   # GPU tests, only on a GPU node via sbatch
 ruff check . && ruff format --check .
@@ -76,7 +76,9 @@ ruff check . && ruff format --check .
 - `gpu`: needs a GPU, skipped unless `--run-gpu`. `slow`: a test (or a group sharing
   cached results) taking more than about 1 s, skipped unless `--run-slow`. Mark new tests
   slow when they exceed ~1.5 s; CI and sbatch runs pass `--run-slow`. Login-node CPU time
-  of the default run: 125.5 s before the marker, 38.6 s after; with `--run-slow` 126 s.
+  of the default run: 125.5 s before the marker; after CP7 48 s, the slow tests alone
+  156 s (so `--run-slow` is about 205 s, close to the 300 s cap: run the two parts
+  separately if it grows).
   `tests/test_markers.py` tests the mechanism with the repository's real `conftest.py`.
 
 ## Numerical reproducibility (non-negotiable)
