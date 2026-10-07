@@ -10,10 +10,10 @@ import cudaq
 import numpy as np
 import pytest
 
-from ansatz_reference import numpy_ansatz
 from cudaq_pde import classical
 from cudaq_pde.solvers import lcu
 from cudaq_pde.solvers import variational as V
+from cudaq_pde.solvers.ansatz_numpy import numpy_ansatz
 from cudaq_pde.solvers.lcu_kernels import lcu_target
 
 L = classical.TWO_PI

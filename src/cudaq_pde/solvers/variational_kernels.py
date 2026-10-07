@@ -28,6 +28,21 @@ def hea_ry_on(q: cudaq.qview, thetas: list[float], depth: int):
 
 
 @cudaq.kernel
+def hea_ry_adjoint_on(q: cudaq.qview, thetas: list[float], depth: int):
+    """Adjoint of :func:`hea_ry_on`: reverse gate order with negated RY angles."""
+    n = q.size()
+    for k in range(depth):
+        d = depth - 1 - k
+        for i in range(n):
+            ry(-thetas[(d + 1) * n + i], q[i])
+        for j in range(n - 1):
+            i = n - 2 - j
+            x.ctrl(q[i], q[i + 1])
+    for i in range(n):
+        ry(-thetas[i], q[i])
+
+
+@cudaq.kernel
 def hea_state(n: int, thetas: list[float], depth: int):
     """Prepare the ansatz state on ``n`` fresh qubits starting from |0...0>."""
     q = cudaq.qvector(n)

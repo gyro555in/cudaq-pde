@@ -6,7 +6,7 @@ import cudaq
 import numpy as np
 import pytest
 
-from ansatz_reference import apply_cx, numpy_ansatz
+from cudaq_pde.solvers.ansatz_numpy import apply_cx, numpy_ansatz
 from cudaq_pde.solvers.variational_kernels import hea_state
 
 TOL = 1e-12
@@ -59,3 +59,31 @@ def test_gate_counts_match_closed_form(n: int, depth: int) -> None:
     assert counts.get("ry", 0) == n * (depth + 1)
     assert counts.get("cx", 0) == (n - 1) * depth
     assert sum(counts.values()) == n * (depth + 1) + (n - 1) * depth
+
+
+@pytest.mark.parametrize("depth", [0, 1, 2, 3])
+@pytest.mark.parametrize("n", [2, 3, 4])
+def test_adjoint_undoes_the_ansatz(n: int, depth: int) -> None:
+    from ansatz_test_kernels import ansatz_then_adjoint
+
+    thetas = np.random.default_rng(7 * n + depth).uniform(-3, 3, n * (depth + 1))
+    state = np.array(cudaq.get_state(ansatz_then_adjoint, n, thetas.tolist(), depth))
+    expected = np.zeros(2**n, dtype=complex)
+    expected[0] = 1.0
+    np.testing.assert_allclose(state, expected, atol=1e-12)
+
+
+@pytest.mark.parametrize("depth", [1, 2])
+@pytest.mark.parametrize("n", [3, 4])
+def test_adjoint_amplitude_is_the_state_overlap(n: int, depth: int) -> None:
+    """<0| A(other)^dagger A(theta) |0> equals <psi(other)|psi(theta)> (numpy)."""
+    from ansatz_test_kernels import ansatz_with_other_adjoint
+
+    rng = np.random.default_rng(n + 10 * depth)
+    a, b = rng.uniform(-3, 3, (2, n * (depth + 1)))
+    state = np.array(
+        cudaq.get_state(ansatz_with_other_adjoint, n, a.tolist(), b.tolist(), depth)
+    )
+    overlap = numpy_ansatz(n, b, depth) @ numpy_ansatz(n, a, depth)
+    assert state[0] == pytest.approx(overlap, abs=1e-12)
+    assert abs(overlap) < 0.999  # the two states really differ

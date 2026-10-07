@@ -1,4 +1,9 @@
-"""Test helper: independent numpy simulation of the RY/CX ansatz."""
+"""Classical numpy simulation of the RY/CX ansatz (no CUDA-Q, no state-vector readout).
+
+Independent of the kernels in :mod:`variational_kernels`, so it is both the reference
+the kernel tests compare against and the way analysis code (shot studies) evaluates
+the field represented by a set of angles without touching a simulator.
+"""
 
 import numpy as np
 
@@ -36,3 +41,12 @@ def numpy_ansatz(n: int, thetas: np.ndarray, depth: int) -> np.ndarray:
         for i in range(n):
             psi = apply_ry(psi, n, i, thetas[(d + 1) * n + i])
     return psi
+
+
+def exact_cost_and_overlap(
+    n: int, theta: np.ndarray, depth: int, b: np.ndarray
+) -> tuple[float, float]:
+    """``C = 1 - <psi|b>^2 / ||b||^2`` and ``<psi|b>`` for the ansatz state ``psi``."""
+    psi = numpy_ansatz(n, theta, depth)
+    overlap = float(psi @ b)
+    return 1.0 - overlap**2 / float(b @ b), overlap

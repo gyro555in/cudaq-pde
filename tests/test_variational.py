@@ -37,9 +37,9 @@ import cudaq
 import numpy as np
 import pytest
 
-from ansatz_reference import numpy_ansatz
 from cudaq_pde import classical
 from cudaq_pde.solvers import variational as V
+from cudaq_pde.solvers.ansatz_numpy import numpy_ansatz
 from fd_helpers import dense_L
 
 C_ADV, NU, DT, L = 1.0, 0.4, 0.05, classical.TWO_PI
