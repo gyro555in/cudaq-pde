@@ -219,17 +219,27 @@ routes (`cudaq_pde.solvers.oneshot*`), all checked against `classical.evolve_spe
   moderate-`sigma` route. For `sigma` below about 2.5 the Nyquist cut leaves a slowly
   decaying real-space ripple and the window is the whole grid.
 
-Mid-circuit measurement and reset (needed by B1), as far as it was checked:
+Mid-circuit measurement and reset (needed by B1), as far as it was checked
+(`benchmarks/mid_circuit_probe.py`; the emulated targets use `emulate=True`, no
+credentials):
 
 | Target | `mz` + `reset` in kernels |
 |--------|---------------------------|
 | `qpp-cpu`, CUDA-Q 0.16 | works through `cudaq.run` (a kernel returning `list[bool]`); sampled joint statistics agree with the exact values |
-| `nvidia` | not checked yet |
-| IonQ, IQM, OQC | the CUDA-Q pages say nothing about it; not checked |
+| `nvidia`, A100, fp64 | works (job 607242): joint statistic, B1 and B2 agree with the exact values within 4 sigma at 20,000 shots; routes A, B, C agree with the spectral reference to 1.6e-15 |
+| IonQ, emulated | B2 compiles and gives counts identical to `qpp-cpu`; B1 compiles through `cudaq.sample` but `cudaq.run` is "not yet supported on this target", so the joint record is unavailable |
+| Quantinuum, emulated | same as IonQ |
+| IQM, emulated | does not get as far as compiling: the target asks the IQM server URL for the device architecture and no server is reachable; not tested |
 | AQT | not a CUDA-Q 0.16 target |
 
-`cudaq.translate` accepts such kernels as OpenQASM 2 and as `qir-adaptive`, but not as
-`qir-base`. B2 needs none of this and is the fallback. No QPU has run any of these routes.
+Only `cudaq.run` returns the joint record of the mid-circuit outcomes. `cudaq.sample`
+with `explicit_measurements=True` returned correlations that cannot occur (about 8% of
+the shots of a test circuit), and CUDA-Q 0.16 refuses `sample` for kernels that branch on
+a measurement. Identical counts in an emulated run show that the kernel compiled and ran
+through the target's emulation path; they say nothing about hardware support for
+mid-circuit measurement. `cudaq.translate` accepts such kernels as OpenQASM 2 and as
+`qir-adaptive`, but not as `qir-base`. B2 needs none of this and is the fallback. No QPU
+has run any of these routes.
 
 Lowered CX counts (CUDA-Q 0.16 OpenQASM 2 lowering of a builder mirror of the circuit,
 `"negative"` Nyquist, not hardware-native; the `"zero"` convention adds `12n - 22`).

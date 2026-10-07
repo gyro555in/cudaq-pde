@@ -262,13 +262,22 @@ ruff check . && ruff format --check .
   ancillas; B1 = one ancilla with `mz` then `reset` after each factor, run through
   `cudaq.run` (`sampling.run_records`); the factors commute, so the all-zero record has
   the same probability (tested against B2 and the exact distribution).
-- Mid-circuit `mz` + `reset` status (report, do not guess): works on qpp-cpu through
-  `cudaq.run` on a `-> list[bool]` kernel. `cudaq.sample` with named registers cannot
-  give the joint statistic (global counts keep only the final register). The nvidia
-  target is NOT yet checked (needs a GPU job). CUDA-Q's IonQ, IQM and OQC pages say
-  nothing about mid-circuit measurement or reset; AQT is not a 0.16 target.
-  `cudaq.translate` accepts such kernels as OpenQASM 2 and `qir-adaptive`; `qir-base`
-  fails ("QIR conformance failed"). Keep B2 as the fallback.
+- Mid-circuit `mz` + `reset` status (report, do not guess; `benchmarks/mid_circuit_probe.py`):
+  works on qpp-cpu and on the A100 (nvidia fp64, job 607242: joint statistic, B1, B2 within
+  4 sigma, routes A/B/C vs reference 1.6e-15) through `cudaq.run` on a `-> list[bool]`
+  kernel. Only `cudaq.run` gives the joint record: `cudaq.sample` with named registers
+  keeps only the final register, `sample(..., explicit_measurements=True)` returned
+  impossible correlations (~8% of shots), and 0.16 refuses `sample` for kernels that
+  branch on a measurement ("use cudaq.run"). Emulated remote targets
+  (`set_target(name, emulate=True)`, documented for ionq and quantinuum): `cudaq.run` is
+  "not yet supported on this target" for both, so B1's joint record is unavailable there;
+  B2 compiles and is identical to qpp-cpu, B1 compiles as a plain `sample` kernel
+  (`oneshot_b1_sample_loaded`, counts identical, no joint statistic). IQM emulation
+  needs the device architecture from the server URL (no server, no mock in the wheel):
+  not tested. Emulation proves compilation and a local run, not hardware support. IonQ's
+  target emits `qir-base` and removes measurements; Quantinuum's emits adaptive QIR. AQT
+  is not a 0.16 target. `cudaq.translate` accepts mid-circuit kernels as OpenQASM 2 and
+  `qir-adaptive`; `qir-base` fails. Keep B2 as the fallback.
 - Route C: the multiplier `g` is the DFT of real weights `w_s` (inverse DFT of `g`,
   signed). Window `s in [-2**(q-1), 2**(q-1))`, `q` minimal with dropped L1 mass at most
   1e-13; LCU `A_L^dagger SELECT A_R` with a signed RY-tree `A_R` and an unsigned `A_L`;
