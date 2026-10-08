@@ -80,6 +80,54 @@ def test_oneshot_resource_table_matches_the_code() -> None:
         assert rr.lowered_counts("C", n, a)["cx"] == cx_c
 
 
+def test_burgers_dynamic_range_table_matches_the_code() -> None:
+    from cudaq_pde.solvers import burgers_study as st
+
+    cudaq.set_target("qpp-cpu")
+    rows = re.findall(
+        r"^\| (0\.\d+) \| ([\d.e+-]+) \| ([\d.]+) \| ([\d.e+-]+) \| ([\d.e+-]+) "
+        r"\| (yes|no) / (yes|no) \|$",
+        README,
+        flags=re.MULTILINE,
+    )
+    assert [float(r[0]) for r in rows] == [0.5, 0.1, 0.05, 0.02]
+    for nu, min_p, p_succ, s_lo, s_hi, res5, res6 in rows:
+        nu = float(nu)
+        r5 = st.study_row("sin", nu, 5, 1.0)
+        r6 = st.study_row("sin", nu, 6, 1.0)
+        assert float(min_p) == pytest.approx(r6["min_p_true"], rel=5e-3)
+        assert float(p_succ) == pytest.approx(r6["p_succ"], abs=5e-4)
+        assert float(s_lo) == pytest.approx(r6["shots_per_probe"][0], rel=5e-3)
+        assert float(s_hi) == pytest.approx(r6["shots_per_probe"][2], rel=5e-3)
+        assert (res5 == "yes") == r5["resolved"] and (res6 == "yes") == r6["resolved"]
+
+
+def test_burgers_hardware_table_matches_the_code() -> None:
+    from cudaq_pde import burgers as B
+    from cudaq_pde import classical
+    from cudaq_pde.solvers import burgers_resources as br
+    from cudaq_pde.solvers import burgers_study as st
+
+    cudaq.set_target("qpp-cpu")
+    rows = re.findall(
+        r"^\| (\d+) \| (A|B2|C) \| (\d+) \| (\d+) \| (yes|no) / (yes|no) \|$",
+        README,
+        flags=re.MULTILINE,
+    )
+    assert [(int(r[0]), r[1]) for r in rows] == [
+        (4, "A"), (4, "B2"), (4, "C"), (5, "A"), (5, "B2"), (5, "C"),
+        (6, "A"), (6, "B2"), (6, "C"),
+    ]  # fmt: skip
+    for n, route, qubits, cx, fit20, fit24 in rows:
+        n = int(n)
+        d = B.discrete_burgers(st.CASES["asym"](classical.grid(n)), 0.5, 1.0)
+        got = br.route_row(route, d.phi0, 0.5, 1.0)
+        assert got["qubits"] == int(qubits) and got["cx_lowered"] == int(cx)
+        assert (fit20 == "yes") == got["fits"]["20"]
+        assert (fit24 == "yes") == got["fits"]["24"]
+        assert got["cx_lowered"] == got["cx_constructed"]
+
+
 def test_swaps_claim_in_readme() -> None:
     cudaq.set_target("qpp-cpu")
     for n in (4, 7):

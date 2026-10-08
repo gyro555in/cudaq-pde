@@ -44,6 +44,16 @@ All notable changes to this project are documented here. The format follows
   round trip of the spectral, A, B2 and B1 circuits (counts, statevector, mid-circuit
   measure and reset).
 
+- Viscous Burgers via Cole-Hopf on the one-shot heat solver: two independent classical
+  references (exact Cole-Hopf in the log domain, pseudo-spectral RK4 with 2/3
+  dealiasing), the zero-mean Galilean shift, heat-step kernels with gate-loaded `phi0`
+  (routes A, B2, C; position and Fourier readout), a pointwise velocity estimator with
+  delta-method variance and bias and explicit zero-count handling, a dynamic-range study
+  as `nu` shrinks (including the regime where the grid solution is unresolved), the
+  `phi` power spectrum readout, resource tables with 20- and 24-qubit fit flags
+  (`benchmarks/burgers_dynamic_range.py`, `benchmarks/burgers_resources.py`).
+- `oneshot_resources.build_mirror(..., advection=False, loader=...)`.
+
 ### Fixed
 - `spectral_resources.qasm_stats` split OpenQASM 2 text by line, but CUDA-Q 0.16 writes
   `reset q[3];cx ...` on one line, so the gate after every reset was not counted. It now

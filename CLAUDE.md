@@ -54,6 +54,8 @@ ruff check . && ruff format --check .
   `metadata.py`, `solvers/` (`spectral*.py`: gate-level advection;
   `variational.py` driver and `variational_kernels.py` ansatz: advection-diffusion)
   (`oneshot*.py`: one-shot advection-diffusion, three block-encoding routes)
+  and `burgers.py` (classical Burgers references) with `solvers/burgers_*.py` (Cole-Hopf
+  heat step, estimator, studies)
 - `tests/`, `examples/`, `benchmarks/`, `logs/` (sbatch output, gitignored),
   `results/` (example plots and JSON, gitignored)
 - Release files: `README.md` (snippets and resource table are checked by
@@ -297,6 +299,49 @@ ruff check . && ruff format --check .
 - `qasm_stats` splits statements on `;` (CUDA-Q writes `reset q[3];ry(...) q[3];` on one
   line; splitting on lines silently dropped the gate after each reset).
 
+## Burgers via Cole-Hopf (burgers.py, solvers/burgers_*.py)
+- `u = -2 nu (ln phi)_x`, `phi0 = exp(-(W - min W)/2nu)`, `W = int w0` (spectral antiderivative,
+  Nyquist zero), heat step = the CP7 circuit with `c = 0` (no advection layer, so no
+  advection gates in CP8 counts). `cole_hopf_phi0` raises on a nonzero mean and when the
+  valley `exp(-range)` underflows (range > 600).
+- Two independent references (`burgers.py`, no cudaq): `exact_cole_hopf` (closed form,
+  `u = sum ((x-y)/t) w / sum w` with log-domain softmax weights over a fine grid and
+  periodic images; `exact_log_phi` is the same sum for `ln phi`) and
+  `pseudospectral_burgers` (integrating-factor RK4, 2/3 dealiasing, N = 1024). They agree
+  to ~1e-13 on smooth cases and ~2e-11 at nu = 0.02, T = 1; test tolerance =
+  3 x (integrator's N -> 2N difference) + 1e-12. `discrete_burgers` is what the circuit
+  computes on 2**n points (FD velocity `-(nu/h)(ln phi_{j+1} - ln phi_{j-1})`).
+- Zero mean: `galilean_split` (asserts `|mean| <= 8 eps max|u0|`), `u(x,t) = U0 + w(x - U0 t, t)`;
+  probes shift to `x + U0 T` exactly (`lab_positions`), fields via
+  `evolve_spectral(w, T, c=U0)` (`shift_back`). The state carries `phi`, so the shift acts
+  on the READOUT.
+- Kernels (`burgers_kernels.py`): `heat_{a,b2,c}_on` (block) and `_measured` (gate-loaded
+  `phi0` via `oneshot.prepare_real`, `2**n - 2` CX; measure system then ancillas);
+  `fourier=True` drops the final QFT for the spectrum. B1 is not used in CP8.
+  `burgers_quantum.sample_heat` is hardware-path (shots only); bins are per grid index, or
+  per bit-reversed register index with `fourier` (`fft_counts` reorders).
+- Estimator (`burgers_estimator.py`): `u = -(nu/2h) ln(c_{j+1}/c_{j-1})` from raw accepted
+  counts. Delta method: `Var = (nu/2h)^2 (1/(S q+) + 1/(S q-))`, `q = P_succ p`, `S` total
+  shots; bias `(nu/4hS)(1/q+ - 1/q-)`. Exact multinomial Monte Carlo: variance within 5%
+  from a smaller expected count of 30 (16% off at 10, wrong at 1), bias good from 30;
+  hence `c_min = 30` (the plan said 10). Zero count -> plain estimate NaN (counted),
+  Haldane `c + 1/2` always defined and unbiased to first order from ~3 counts.
+- Dynamic range (`burgers_study.py`, `benchmarks/burgers_dynamic_range.py`): `p` spans
+  `exp(2/nu)`; shots at a probe `~ (nu/2h)^2 (1/q+ + 1/q-)/eps^2` are set by the smaller
+  `p`. `u(pi) = 0` for sin x (symmetry), so probes are pi/4, pi/2, 3pi/4. For sin x, T = 1,
+  eps = 0.05, n = 6: best probe 2e4 to 5e5 shots, worst 1e6 (nu = 0.5), 1e9 (0.1), 2e14
+  (0.05). At nu = 0.02 the grid solution is NOT the physical one (13 to 37 grid points off by
+  more than 10% in `ln p` or non-positive, the heat kernel cannot damp mode N/2 by `e^-50`,
+  the true valley is ~1e-43, below double precision): rows are flagged `resolved = False`.
+  Sampled runs (5 seeds, up to 3e6 shots) at nu = 0.5, 0.1 match the prediction (max |z| 2.3).
+- Spectrum of phi: Fourier-basis readout, error follows the multinomial prediction at every
+  nu; `4 nu^2 sum k^2 P_k` is the `p`-weighted `<u^2>` (not the L2 energy). No pointwise `u`.
+- Resources (`burgers_resources.py`, `oneshot_resources.build_mirror(advection=False,
+  loader=...)`): measured lowered CX equals the construction (`2**n - 2` loader +
+  one-shot block). Realistic hardware configurations: route A at n <= 5 (102 CX incl. loader,
+  6 qubits at n = 5); B2 fits 20/24 qubits only up to n = 5 (20 qubits, 168 CX); route C has
+  `q = n` for every nu tried (2n qubits). Qubit count alone does not make a row realistic.
+
 ## Hardware portability rule
 - Solvers intended for QPUs are gate-level @cudaq.kernel code
   (QFT, exp_pauli, rotations, CNOT). No cudaq.evolve / dynamics target in
@@ -312,7 +357,8 @@ ruff check . && ruff format --check .
 2. Advection-diffusion (non-unitary): variational time stepping
    (Lubasch et al., PRA 101, 010301, 2020 style cost).
 3. Burgers: Cole-Hopf to heat equation (the one-shot circuit with c = 0 evolves phi),
-   then nonlinear variational ansatz.
+   done in CP8 with the dynamic-range cost quantified; next, a nonlinear variational
+   ansatz that avoids the logarithmic readout.
 Classical reference (numpy FFT, exact for linear periodic case) is the
 ground truth for every test.
 
