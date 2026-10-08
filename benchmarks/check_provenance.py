@@ -1,10 +1,11 @@
 """Check the run metadata of every stored paper output.
 
-Reads the metadata block (``collect_metadata()``, under the key ``metadata`` or as the
+Reads the metadata block (the run metadata, under the key ``metadata`` or as the
 whole file for ``logs/*_metadata.json``) of
 
 * ``benchmarks/output/*.json``
 * ``results/shot_study_<jobid>/shot_study.json`` (Slurm job directories only)
+* ``results/gpu_release_<jobid>/*.json`` (copies made by ``gpu_release.sbatch``)
 * ``logs/*_metadata.json``
 
 plus every ``benchmarks/output/*.json`` that ``docs/reproduce_paper.md`` names without a
@@ -38,6 +39,7 @@ from pathlib import Path
 PATTERNS = (
     "benchmarks/output/*.json",
     "results/shot_study_*/shot_study.json",
+    "results/gpu_release_*/*.json",
     "logs/*_metadata.json",
 )
 DOC = "docs/reproduce_paper.md"

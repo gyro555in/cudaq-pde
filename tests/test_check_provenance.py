@@ -127,3 +127,10 @@ def test_bad_expect_argument(tmp_path):
 )
 def test_same_requires_seven_characters(sha, want, same):
     assert cp._same(sha, want) is same
+
+
+def test_gpu_release_copies_are_read(tmp_path):
+    put(tmp_path, "results/gpu_release_7/mid_circuit_nvidia.json", meta(job="7"))
+    assert run(tmp_path) == 0
+    put(tmp_path, "results/gpu_release_8/x.json", meta(dirty=True, job="8"))
+    assert run(tmp_path) == 1
