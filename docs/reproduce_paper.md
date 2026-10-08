@@ -20,32 +20,43 @@ records run metadata appears in the table.
 
 ## Numbering
 
-The repository does not carry the paper's numbering. The paper items below are the ones
-the author named (Table 3 = variational per-step table, Table 7 = Burgers dynamic range,
-Figures 2, 3, 4) and Table 1 (spectral resources, assigned by content in
-`docs/paper_audit.md` item 25: confirm). Tables 2, 4, 5 and 6 are not identified: their
-candidate sources are the rows marked "unassigned".
+The numbers are the paper's:
+
+| Paper item | Source |
+|---|---|
+| Table 1 | spectral resources |
+| Table 2 | cost circuits (LCU against Hadamard test) and shift / LCU block resources |
+| Table 3 | variational per-step table |
+| Table 4 and Figure 2 | shot study |
+| Table 5 | one-shot resources |
+| Table 6 | Burgers resources (device fit) |
+| Table 7 | mid-circuit probe: GPU job, emulated targets, record statistics |
+| Table 8 and Figure 3 | Burgers dynamic range |
+| Figure 4 | power spectrum shots |
+
+A table made of several scripts has one row per script, all labelled with the same
+number. Scripts that no paper item uses (`benchmarks/qiskit_roundtrip.py`, the two
+examples) are not in the map; the test lists the benchmark among its exemptions.
 
 ## Data
 
 | Paper item | Command | Script(s) | Output |
 |---|---|---|---|
 | Table 1 | `taskset -c 0 python benchmarks/spectral_resources.py` | `benchmarks/spectral_resources.py` | `benchmarks/output/spectral_resources.json` |
+| Table 2 (cost circuits) | `taskset -c 0 python benchmarks/cost_circuit_comparison.py` | `benchmarks/cost_circuit_comparison.py` | `benchmarks/output/cost_circuit_comparison.json` |
+| Table 2 (shift and LCU block resources) | `taskset -c 0 python benchmarks/measurable_resources.py` | `benchmarks/measurable_resources.py` | `benchmarks/output/measurable_resources.json` |
 | Table 3 (and the depth and tolerance sweeps) | `taskset -c 0 python benchmarks/variational_report.py --ns 3 4` | `benchmarks/variational_report.py` | `benchmarks/output/variational_report.json` |
-| Table 7 and Figure 3 data | `taskset -c 0 python benchmarks/burgers_dynamic_range.py` | `benchmarks/burgers_dynamic_range.py` | `benchmarks/output/burgers_dynamic_range.json` |
-| Figure 2 data (32 min, 1 CPU, job 606305) | `sbatch benchmarks/shot_study.sbatch` | `benchmarks/shot_study.sbatch`, `benchmarks/shot_study.py` | `results/shot_study_<jobid>/shot_study.json`, `logs/cudaq-pde-shot-study_<jobid>.out` |
+| Table 4 and Figure 2 data (32 min, 1 CPU, job 606305) | `sbatch benchmarks/shot_study.sbatch` | `benchmarks/shot_study.sbatch`, `benchmarks/shot_study.py` | `results/shot_study_<jobid>/shot_study.json`, `logs/cudaq-pde-shot-study_<jobid>.out` |
+| Table 5 | `taskset -c 0 python benchmarks/oneshot_resources.py` | `benchmarks/oneshot_resources.py` | `benchmarks/output/oneshot_resources.json` |
+| Table 6 | `taskset -c 0 python benchmarks/burgers_resources.py` | `benchmarks/burgers_resources.py` | `benchmarks/output/burgers_resources.json` |
+| Table 7 (GPU probe and fp64 agreement of routes A, B2, C; needs approval) | `sbatch benchmarks/mid_circuit_probe.sbatch` | `benchmarks/mid_circuit_probe.sbatch`, `benchmarks/mid_circuit_probe.py`, `benchmarks/oneshot_fp64_agreement.py` | `benchmarks/output/mid_circuit_<target>.json` (target = nvidia), `benchmarks/output/oneshot_fp64_agreement.json`, `logs/cudaq-pde-mcm-probe_<jobid>.out` |
+| Table 7 (CPU simulator) | `taskset -c 0 python benchmarks/mid_circuit_probe.py --target qpp-cpu` | `benchmarks/mid_circuit_probe.py` | `benchmarks/output/mid_circuit_<target>.json` |
+| Table 7 (IonQ, emulated) | `taskset -c 0 python benchmarks/mid_circuit_probe.py --target ionq --emulate` | `benchmarks/mid_circuit_probe.py` | `benchmarks/output/mid_circuit_<target>_emulated.json` |
+| Table 7 (Quantinuum, emulated) | `taskset -c 0 python benchmarks/mid_circuit_probe.py --target quantinuum --emulate` | `benchmarks/mid_circuit_probe.py` | `benchmarks/output/mid_circuit_<target>_emulated.json` |
+| Table 7 (IQM, emulated) | `taskset -c 0 python benchmarks/mid_circuit_probe.py --target iqm --emulate` | `benchmarks/mid_circuit_probe.py` | `benchmarks/output/mid_circuit_<target>_emulated.json` |
+| Table 7 (mid-circuit records, `cudaq.run` against `explicit_measurements`) | `taskset -c 0 python benchmarks/mid_circuit_probe_stats.py` | `benchmarks/mid_circuit_probe_stats.py` | `benchmarks/output/mid_circuit_probe_stats.json` |
+| Table 8 and Figure 3 data | `taskset -c 0 python benchmarks/burgers_dynamic_range.py` | `benchmarks/burgers_dynamic_range.py` | `benchmarks/output/burgers_dynamic_range.json` |
 | Figure 4 data | `taskset -c 0 python benchmarks/spectrum_shots.py` | `benchmarks/spectrum_shots.py` | `benchmarks/output/spectrum_shots.json` |
-| unassigned: LCU against Hadamard-test cost circuits | `taskset -c 0 python benchmarks/cost_circuit_comparison.py` | `benchmarks/cost_circuit_comparison.py` | `benchmarks/output/cost_circuit_comparison.json` |
-| unassigned: shift and LCU block resources | `taskset -c 0 python benchmarks/measurable_resources.py` | `benchmarks/measurable_resources.py` | `benchmarks/output/measurable_resources.json` |
-| unassigned: one-shot resources, n = 3 to 10, sigma sweep | `taskset -c 0 python benchmarks/oneshot_resources.py` | `benchmarks/oneshot_resources.py` | `benchmarks/output/oneshot_resources.json` |
-| unassigned: Burgers resources and device fit | `taskset -c 0 python benchmarks/burgers_resources.py` | `benchmarks/burgers_resources.py` | `benchmarks/output/burgers_resources.json` |
-| unassigned: mid-circuit records, `cudaq.run` against `explicit_measurements` | `taskset -c 0 python benchmarks/mid_circuit_probe_stats.py` | `benchmarks/mid_circuit_probe_stats.py` | `benchmarks/output/mid_circuit_probe_stats.json` |
-| unassigned: mid-circuit probe on one target (CPU or emulated) | `taskset -c 0 python benchmarks/mid_circuit_probe.py --target qpp-cpu` | `benchmarks/mid_circuit_probe.py` | `benchmarks/output/mid_circuit_<target>.json` |
-| unassigned: GPU probe and fp64 agreement of routes A, B2, C (needs approval) | `sbatch benchmarks/mid_circuit_probe.sbatch` | `benchmarks/mid_circuit_probe.sbatch`, `benchmarks/mid_circuit_probe.py`, `benchmarks/oneshot_fp64_agreement.py` | `benchmarks/output/mid_circuit_<target>.json` (target = nvidia), `benchmarks/output/oneshot_fp64_agreement.json`, `logs/cudaq-pde-mcm-probe_<jobid>.out` |
-| unassigned: fp64 agreement of the one-shot routes on the CPU | `taskset -c 0 python benchmarks/oneshot_fp64_agreement.py --target qpp-cpu` | `benchmarks/oneshot_fp64_agreement.py` | `benchmarks/output/oneshot_fp64_agreement.json` |
-| unassigned: OpenQASM round trip through Qiskit (`pip install -e ".[aqt]"`) | `taskset -c 0 python benchmarks/qiskit_roundtrip.py` | `benchmarks/qiskit_roundtrip.py` | `benchmarks/output/qiskit_roundtrip.json`, `results/qasm_export/<circuit>_n<n>.qasm` |
-| unassigned: spectral advection example | `taskset -c 0 python examples/advection_spectral.py --n 6` | `examples/advection_spectral.py` | `results/advection_spectral.json`, `results/advection_spectral.png` |
-| unassigned: variational example | `taskset -c 0 python examples/advection_diffusion_variational.py --n 3` | `examples/advection_diffusion_variational.py` | `results/advection_diffusion_variational.json`, `results/advection_diffusion_variational.png` |
 
 ## Figures (read only the stored JSON above)
 

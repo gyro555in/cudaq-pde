@@ -3,7 +3,9 @@
 
 The circuit and the exact distribution come from
 ``benchmarks/mid_circuit_probe_stats.py`` (derived by branch enumeration, not hard
-coded). Both experiments use 100000 shots at a fixed seed and run once per module.
+coded). Both experiments use 100000 shots at a fixed seed and run once per module (about
+15 s of CPU), so the tests that need them are marked slow; the exact-distribution tests
+need no simulation and stay in the default run.
 """
 
 import importlib.util
@@ -70,6 +72,7 @@ def test_exact_distribution_for_other_angles(mod) -> None:
 # ------------------------------------------------------------------ the two readouts
 
 
+@pytest.mark.slow
 def test_run_has_no_impossible_records_and_the_right_joint_frequency(stats) -> None:
     run = stats["run"]
     assert run["shots"] == 100_000
@@ -81,6 +84,7 @@ def test_run_has_no_impossible_records_and_the_right_joint_frequency(stats) -> N
     )
 
 
+@pytest.mark.slow
 def test_explicit_measurements_sample_returns_impossible_records(stats) -> None:
     """Documents a CUDA-Q 0.16 defect (about 8% of the records). The repository pins
     ``cudaq<0.17``; if a future release fixes it this test fails and the README and
@@ -95,6 +99,7 @@ def test_explicit_measurements_sample_returns_impossible_records(stats) -> None:
     )
 
 
+@pytest.mark.slow
 def test_stats_json_is_written_with_metadata(stats, mod, tmp_path: Path) -> None:
     path = mod.write_stats(stats, tmp_path / "out" / "mid_circuit_probe_stats.json")
     data = json.loads(path.read_text())
