@@ -5,7 +5,8 @@ on [CUDA-Q](https://nvidia.github.io/cuda-quantum/) (Python API), with honest
 resource accounting. Version 0.1.0.
 
 Three solvers for the 1D periodic equation `u_t + c u_x = nu u_xx` on
-`N = 2**n` grid points, encoded in the amplitudes of `n` qubits:
+`N = 2**n` grid points, encoded in the amplitudes of `n` qubits (and a fourth, viscous
+Burgers, built on the third):
 
 - **Spectral advection** (`nu = 0`, unitary): `QFT-dagger -> n single-qubit phase
   gates -> QFT`, written as `@cudaq.kernel` code from QFT, controlled phases and
@@ -265,10 +266,107 @@ measured or constructed.
 | 8 | 368 | 366 | 36 | 332 | 6 |
 | 10 | 1204 | 578 | 55 | 424 | 6 |
 
+## Burgers equation via Cole-Hopf
+
+`u_t + u u_x = nu u_xx` becomes the heat equation for `phi` under `u = -2 nu (ln phi)_x`,
+`phi0 = exp(-(1/2nu) int u0)`, so the one-shot circuit above with `c = 0` evolves it.
+The state carries `phi`, which is real and positive, and sampling gives
+`p_j = phi_j**2 / ||phi||**2`; the velocity is a nonlinear readout of that.
+
+- **References.** Exact Cole-Hopf (closed form in the log domain, stable down to
+  `nu = 0.02`) and an independent pseudo-spectral integrator (RK4, 2/3 dealiasing) agree
+  to about 1e-13 on smooth cases and 2e-11 after the shock forms (`nu = 0.02`, `T = 1`);
+  the tolerance is derived from the integrator's own `N -> 2N` difference.
+- **Zero mean.** A periodic `phi0` needs `int u0 = 0`. The mean `U0` is subtracted (and
+  asserted gone), the zero-mean problem is evolved, and the result is shifted back:
+  `u(x, t) = U0 + w(x - U0 t, t)`. A probe at moving-frame position `x` gives the lab
+  value at `x + U0 T` with no interpolation; for a whole field the spectral advection
+  with `c = U0` is used.
+- **Pointwise velocity.** `u_j = -(nu/2h) ln(c_{j+1} / c_{j-1})` from raw accepted
+  counts: the norm and the acceptance cancel. The delta-method variance is
+  `(nu/2h)**2 (1/(S q_{j+1}) + 1/(S q_{j-1}))` with `q = P_succ p` and `S` total shots,
+  the bias is `(nu/4hS)(1/q_{j+1} - 1/q_{j-1})`. Monte Carlo with exact multinomial draws
+  confirms both once the smaller expected count is about 30 or more (variance 16% off at
+  10, wrong at 1); a zero count makes the plain estimate undefined (NaN, counted), the
+  `c + 1/2` variant is always defined and removes the leading bias, and every estimate
+  carries a validity mask.
+- **The cost is the dynamic range.** `phi` spans `exp(1/nu)` in amplitude, so `p` spans
+  `exp(2/nu)` and the shots for a given error are set by the smaller `p` next to the
+  probe. `u(pi) = 0` for `sin x` by symmetry, so the probes are `pi/4`, `pi/2`, `3pi/4`.
+  Case `u0 = sin x`, `T = 1`, route A, target standard error 0.05 of `u_hat` (shots are the
+  delta-method prediction; sampled runs at `nu = 0.5` and `0.1` with 5 seeds agree with it,
+  max |z| 2.3):
+
+| nu | min p (n = 6, exact) | P_succ | shots, pi/4 | shots, 3pi/4 | resolvable on hardware (pi/4, pi/2, 3pi/4) | resolved n = 5 / 6 |
+|----|----------------------|--------|-------------|--------------|--------------------------------------------|--------------------|
+| 0.5 | 3.23e-03 | 0.807 | 2.48e+05 | 1.24e+06 | yes, yes, yes | yes / yes |
+| 0.1 | 2.09e-09 | 0.719 | 1.63e+04 | 1.05e+09 | yes, no, no | yes / yes |
+| 0.05 | 8.63e-18 | 0.713 | 1.65e+04 | 1.71e+14 | yes, no, no | yes / yes |
+| 0.02 | 1.89e-43 | 0.709 | 4.64e+05 | 1.95e+31 | no, no, no | no / no |
+
+  "Resolvable on hardware" applies a noise floor to the probability of the smaller
+  neighbour bin: a probe with `min(p_{j+1}, p_{j-1})` below the floor (default 1e-3,
+  `burgers_study.NOISE_FLOOR`) is unresolvable regardless of the number of shots, because
+  error counts of that size swamp the signal. **The floor is a modelling assumption**
+  for the combined gate and readout error per shot, to be replaced by device calibration
+  data; it is not a measurement. The sampled confirmations above are noiseless simulator
+  runs and do not apply it (at `nu = 0.1` the `pi/2` probe is statistically fine but
+  below the floor).
+
+  Away from the valley the velocity is cheap; in the valley, where the shock forms, it
+  is not: about 1e9 shots at `nu = 0.1` and 1e14 at `nu = 0.05` for one probe at `3pi/4`.
+  At `nu = 0.02` the grid solution is not the physical one at all: the heat kernel
+  cannot damp mode `N/2` by the `e^-50` the valley needs, so 13 to 37 of the 32 or 64 grid
+  points are wrong (non-positive or off by more than 10% in `ln p`, over both cases and
+  `T = 0.5, 1`), the true valley is below 1e-43 (below double precision), and the shot numbers for that row describe an
+  aliased state. Quantified, not avoided: the small-`nu` regime is out of reach of this
+  readout.
+- **Spectrum of phi, a cheap global observable.** Measuring in the Fourier basis (the
+  final QFT is dropped) gives `P[k] = |phi_hat_k|**2 / (N ||phi||**2)`; the error follows
+  the multinomial prediction at every `nu` (no logarithm of tiny numbers), and
+  `4 nu**2 sum k**2 P_k` is the `p`-weighted mean of `u**2`. It carries no pointwise
+  velocity.
+- **Hardware fit** (case `sin x + 0.5 sin 2x`, `T = 1`; lowered CX of the gate-loaded
+  `phi0` plus the heat step, measured as above; the loader alone is `2**n - 2` CX, so
+  route A grows like `2 * 2**n`):
+
+| n | route | qubits | total CX | fits 20 / 24 qubits |
+|---|-------|--------|----------|---------------------|
+| 4 | A | 5 | 54 | yes / yes |
+| 4 | B2 | 14 | 100 | yes / yes |
+| 4 | C | 8 | 98 | yes / yes |
+| 5 | A | 6 | 102 | yes / yes |
+| 5 | B2 | 20 | 168 | yes / yes |
+| 5 | C | 10 | 180 | yes / yes |
+| 6 | A | 7 | 186 | yes / yes |
+| 6 | B2 | 27 | 264 | no / no |
+| 6 | C | 12 | 318 | yes / yes |
+
+  The qubit count alone does not make a row realistic: the hardware-relevant
+  configurations are route A at `n <= 5` (B2 fits only up to `n = 5`).
+  `benchmarks/burgers_dynamic_range.py` and `benchmarks/burgers_resources.py` print the
+  full tables (both cases, `T = 1` and `0.5`, sampled confirmations, spectrum errors).
+
+### Limits of the Cole-Hopf readout
+
+- **Readout cost is exponential in the inverse viscosity.** `p = phi**2` has its minimum
+  `p_min ~ exp(-Delta/nu)`, with `Delta = max W - min W` the range of `W = int u0` (2 for
+  `sin x`), and the shots for a pointwise velocity scale as `1/(P_succ p_min)`, that is
+  `~ exp(Delta/nu)`. Each factor of 5 in `nu` is many orders of magnitude in shots.
+- **The heat step is not the bottleneck.** `P_succ` stays about 0.7 (0.57 to 0.88 over
+  every row of both cases, `T = 0.5, 1`), so the acceptance costs a factor of about 1.4
+  in shots; the cost sits entirely in the readout of the rare bins.
+- **Loading `phi0` is exponential.** The gate-loaded input costs `2**n - 2` CX (and
+  `2**n - 1` rotations), about 30% of route A's total at `n = 5` and the dominant term
+  beyond; there is no scalable loader here. The input cost is exponential in `n`
+  independently of the readout cost.
+- **The noise floor is an assumption** (see above): with a floor of 1e-3 only probes in the
+  high-`phi` region are usable for `nu <= 0.1`.
+
 ## Roadmap
 
-- Burgers equation via the Cole-Hopf transform to the heat equation (the one-shot
-  circuit with `c = 0`), then a nonlinear variational ansatz.
+- A nonlinear variational ansatz for Burgers, to avoid the dynamic range of the
+  Cole-Hopf readout.
 - Hardware runs (IQM, AQT) through CUDA-Q targets, with native gate counts.
 
 ## Citation and license

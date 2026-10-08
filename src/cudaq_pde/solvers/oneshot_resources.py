@@ -159,8 +159,21 @@ def native_counts(
     }
 
 
-def build_mirror(route: str, n: int, a: float, nyquist: str = "negative", **kw):
-    """Builder-API kernel with the same gate sequence as the real kernel."""
+def build_mirror(
+    route: str,
+    n: int,
+    a: float,
+    nyquist: str = "negative",
+    *,
+    advection: bool = True,
+    loader: oneshot.RySequence | None = None,
+    **kw,
+):
+    """Builder-API kernel with the same gate sequence as the real kernel.
+
+    ``advection=False`` drops the advection layer (the heat step of Burgers, ``c = 0``);
+    ``loader`` is an RY/CX state-preparation list applied to the system first.
+    """
     angles, phi = oneshot.phase_angles(n, 1.0, TWO_PI, 0.1)
     zero = nyquist == "zero"
     k = cudaq.make_kernel()
@@ -180,7 +193,9 @@ def build_mirror(route: str, n: int, a: float, nyquist: str = "negative", **kw):
                 theta /= 2.0
                 k.cr1(theta, sys[j], sys[b])
 
-    def advection() -> None:
+    def advection_layer() -> None:
+        if not advection:
+            return
         for b in range(n):
             k.r1(angles[b], sys[n - 1 - b])
         if zero:
@@ -202,11 +217,13 @@ def build_mirror(route: str, n: int, a: float, nyquist: str = "negative", **kw):
                 if c >= 0:
                     k.cx(w[c], w[t])
 
+    if loader is not None:
+        ry_cx(sys, loader)
     if route == "A":
         anc = k.qalloc(1)
         seq = oneshot.route_a_sequence(n, a)
         iqft()
-        advection()
+        advection_layer()
         for al, c in zip(seq.alpha, seq.ctl, strict=True):
             k.ry(al, anc[0])
             k.cx(sys[c], anc[0])
@@ -215,7 +232,7 @@ def build_mirror(route: str, n: int, a: float, nyquist: str = "negative", **kw):
         fac = oneshot.contractions(n, a)
         anc = k.qalloc(fac.count if route == "B2" else 1)
         iqft()
-        advection()
+        advection_layer()
         for j in range(1, n):
             k.cx(sys[0], sys[j])
         for i in range(fac.count):
@@ -240,7 +257,7 @@ def build_mirror(route: str, n: int, a: float, nyquist: str = "negative", **kw):
         w = k.qalloc(g.q)
         ry_cx(w, g.prep_r)
         iqft()
-        advection()
+        advection_layer()
         for b in range(g.q):
             for j in range(n):
                 k.cr1(g.shift_angles[b * n + j], w[b], sys[n - 1 - j])
