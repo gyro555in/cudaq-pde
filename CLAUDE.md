@@ -72,6 +72,10 @@ ruff check . && ruff format --check .
 - `benchmarks/spectral_resources.py` prints the resource table;
   `benchmarks/variational_report.py` prints the variational accuracy tables;
   `benchmarks/gpu_tests.sbatch` runs `pytest --run-gpu -m gpu` on one A100.
+- `benchmarks/regenerate_paper.sh` (login node: measured-fast steps; `regenerate_paper_cpu.sbatch`:
+  all) regenerates the CPU outputs from a clean `origin/main` and runs
+  `benchmarks/check_provenance.py`; `benchmarks/gpu_release.sbatch` is the GPU counterpart
+  (`--nodelist` picks the 40 GB or 80 GB card, see `docs/reproduce_paper.md`).
 
 ### Verified
 - A100 GPU (driver 570.158.01): nvidia fp64 target verified to 1e-12 agreement with CPU.

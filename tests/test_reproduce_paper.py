@@ -147,3 +147,10 @@ def test_figure_stems_match_the_plotting_module() -> None:
         for output in row["outputs"]:
             assert output.startswith("results/figures/")
             assert Path(output).stem in plots
+
+
+def test_every_benchmark_file_named_in_the_page_exists():
+    """Scripts and sbatch files named anywhere in the page (also outside the tables)."""
+    named = set(re.findall(r"benchmarks/[\w.]+\.(?:py|sh|sbatch)", DOC))
+    assert {"benchmarks/regenerate_paper.sh", "benchmarks/gpu_release.sbatch"} <= named
+    assert not [n for n in named if not (ROOT / n).exists()]

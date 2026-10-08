@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- One reproducible path for the paper outputs (no solver change, no number changed):
+  `benchmarks/regenerate_paper.sh` (refuses unless the tree is clean and `HEAD` is
+  `origin/main`) and `benchmarks/regenerate_paper_cpu.sbatch` regenerate every CPU-only
+  output and run `benchmarks/check_provenance.py`, which tabulates commit, `git_dirty`,
+  target, GPU and job id of every stored output and exits 1 on a dirty file or a foreign
+  commit (tested on synthetic JSON). `benchmarks/gpu_release.sbatch` runs the GPU tests,
+  the mid-circuit probe and the fp64 agreement in one job, with the card chosen by node
+  name (`GPU_NODE`, `EXPECT_GPU`). `docs/reproduce_paper.md` documents all of it and the
+  files changed since the shot study's commit.
 - Paper support (no solver behaviour or number changed): `benchmarks/plots.py` draws
   Figures 2 to 4 (PNG and PDF in `results/figures/`) from the stored JSON only;
   `docs/reproduce_paper.md` maps every table and figure to its command and output path
