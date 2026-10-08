@@ -210,9 +210,10 @@ def test_global_error_obeys_angle_accumulation_bound(n: int) -> None:
     res, _, angle, _, _ = run(n, depth, tol, steps)
     kappa = np.linalg.cond(np.eye(2**n) + DT * dense_L(n, C_ADV, NU, L))
     # kappa = max|g| / min|g| over Fourier modes. It is NOT close to 1: the
-    # highest-frequency mode is damped by |1 - 2a| (0.74 for n = 3, 0.48 for
-    # n = 4), so kappa = 1.35 and 2.08. The bound below is valid but loose;
-    # smooth fields do not excite that mode.
+    # highest-frequency mode is damped by |1 - 4 nu dt / h^2| (min|g| = 0.870 for
+    # n = 3, 0.481 for n = 4), so kappa = 1.149 and 2.078 (np.linalg.cond, checked
+    # by the assertion below). The bound below is valid but loose; smooth fields
+    # do not excite that mode.
     a0, a_dec, a_inc = classical.fd_euler_coefficients(n, DT, C_ADV, NU, L)
     theta = 2 * np.pi * np.arange(2**n) / 2**n
     g = np.abs(a0 + a_dec * np.exp(1j * theta) + a_inc * np.exp(-1j * theta))
