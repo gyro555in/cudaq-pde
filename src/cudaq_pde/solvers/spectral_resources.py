@@ -113,19 +113,25 @@ def build_mirror(n: int, nyquist: str, swaps: bool, steps: int = 1):
 
 
 def qasm_stats(qasm: str) -> dict[str, Any]:
-    """Gate total, CX count, ASAP depth and qubit count of an OpenQASM 2 string."""
+    """Gate total, CX count, ASAP depth and qubit count of an OpenQASM 2 string.
+
+    Statements are split on ``;`` (CUDA-Q 0.16 writes ``reset q[3];ry(..) q[3];`` on one
+    line); for ``measure q -> c`` only the quantum wire counts.
+    """
     qubits = 0
     depth_of: dict[int, int] = {}
     total = cx = 0
-    for line in qasm.splitlines():
-        line = line.strip().rstrip(";")
-        if not line or line.startswith(("//", "OPENQASM", "include")):
+    body = "\n".join(ln for ln in qasm.splitlines() if not ln.strip().startswith("//"))
+    for stmt in body.split(";"):
+        line = stmt.strip()
+        if not line or line.startswith(("OPENQASM", "include", "creg")):
             continue
         if line.startswith("qreg"):
             qubits += int(re.search(r"\[(\d+)\]", line).group(1))
             continue
         name = re.split(r"[ (]", line, maxsplit=1)[0]
-        wires = [int(m) for m in re.findall(r"\[(\d+)\]", line.split(")")[-1])]
+        quantum = line.split("->")[0]
+        wires = [int(m) for m in re.findall(r"\[(\d+)\]", quantum.split(")")[-1])]
         total += 1
         cx += name == "cx"
         layer = 1 + max((depth_of.get(w, 0) for w in wires), default=0)

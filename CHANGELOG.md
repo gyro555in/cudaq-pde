@@ -20,7 +20,34 @@ All notable changes to this project are documented here. The format follows
   scaling (`benchmarks/spectrum_shots.py`).
 - A structural test that only documented simulator modules call `cudaq.get_state`.
 - A `slow` pytest marker (skipped unless `--run-slow`) for tests over about 1 s; CI and
-  the GPU sbatch pass it. The default login-node run drops from 125 s to 39 s of CPU.
+  the GPU sbatch pass it. The default login-node run drops from 125 s to about 48 s of CPU after the one-shot tests.
+
+- One-shot advection-diffusion, `QFT-dagger -> advection phases -> block-encoded
+  diag(exp(-a m**2)) -> QFT` with post-selected ancillas, in three routes: multiplexed RY
+  (exact, small n), a product of `n` CRY and `n(n-1)/2` CCRY contractions on the
+  sign-magnitude register (explicit ancillas, or one ancilla with mid-circuit `mz` and
+  `reset` through `cudaq.run`), and a Gaussian real-space LCU (exponential in n at fixed
+  physical time, documented). Tests against `classical.evolve_spectral` to 1e-12,
+  success probability, sampled success probability for the mid-circuit route, negative
+  controls, resource accounting (native, lowered, constructed) and
+  `benchmarks/oneshot_resources.py`.
+- `sampling.run_records`: the single `cudaq.run` call site (per-shot records of
+  mid-circuit measurements).
+
+- `pytest --shard K/N` and `env/pytest_login_all.sh`: the suite runs in shards on the
+  login node so that no process exceeds about 150 s of CPU; `env/pytest_login.sh` refuses
+  `--run-slow` without `--shard`.
+- `benchmarks/mid_circuit_probe.py` and `.sbatch`: mid-circuit measurement and reset
+  probe for any target (also with `--emulate`), run on an A100 (`nvidia`, fp64).
+
+- Optional extra `aqt` (Qiskit only) and `benchmarks/qiskit_roundtrip.py`: OpenQASM 2
+  round trip of the spectral, A, B2 and B1 circuits (counts, statevector, mid-circuit
+  measure and reset).
+
+### Fixed
+- `spectral_resources.qasm_stats` split OpenQASM 2 text by line, but CUDA-Q 0.16 writes
+  `reset q[3];cx ...` on one line, so the gate after every reset was not counted. It now
+  splits statements on `;`.
 
 ### Changed
 - Angles and infidelities between nearly equal states are computed stably

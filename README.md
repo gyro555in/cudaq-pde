@@ -4,7 +4,7 @@ Gate-level, hardware-portable reference implementations of quantum PDE solvers
 on [CUDA-Q](https://nvidia.github.io/cuda-quantum/) (Python API), with honest
 resource accounting. Version 0.1.0.
 
-Two solvers for the 1D periodic equation `u_t + c u_x = nu u_xx` on
+Three solvers for the 1D periodic equation `u_t + c u_x = nu u_xx` on
 `N = 2**n` grid points, encoded in the amplitudes of `n` qubits:
 
 - **Spectral advection** (`nu = 0`, unitary): `QFT-dagger -> n single-qubit phase
@@ -13,6 +13,10 @@ Two solvers for the 1D periodic equation `u_t + c u_x = nu u_xx` on
   `T`), and the QFT bit reversals can be dropped exactly.
 - **Variational advection-diffusion** (`nu > 0`, non-unitary): explicit-Euler time
   steps, each one a variational fit of a real-amplitude RY/CX ansatz.
+
+- **One-shot advection-diffusion** (`nu > 0`): `QFT-dagger -> advection phases ->
+  block-encoded diag(exp(-nu k**2 T)) -> QFT` with the ancillas post-selected on 0,
+  one circuit for any `T` and no time-step limit (see "One-shot advection-diffusion").
 
 The exact classical solutions (`cudaq_pde.classical`) are the ground truth for
 every test: `evolve_spectral` for the spectral solver and `evolve_fd_euler`,
@@ -192,11 +196,79 @@ a test enforces that no hardware-path module calls `cudaq.get_state`, and that
   FFT index. The error matches the multinomial prediction and scales as
   shots^-0.51 for n = 3 to 8.
 
+## One-shot advection-diffusion
+
+In Fourier space the equation is diagonal, `u_hat_m(T) = exp(-i c k_m T - a m**2)
+u_hat_m(0)` with `a = nu T (2 pi / L)**2`. The advection part is the CP3 phase layer; the
+decay `g(m) = exp(-a m**2) <= 1` is block-encoded and the ancillas are post-selected on
+0. The success probability is `P_succ = ||u(T)||**2 / ||u0||**2` (the norm ratio, route C
+divided by `lambda**2`), so the expected number of shots grows as `1 / P_succ`. Three
+routes (`cudaq_pde.solvers.oneshot*`), all checked against `classical.evolve_spectral`
+(observed agreement about 1e-15):
+
+- **A, multiplexed RY** on one ancilla: exact, `2**n` rotations and `2**n` CX. A
+  reference for `n <= 6`.
+- **B, product of contractions**, the polynomial route. On the sign-magnitude register
+  `m**2` has only positive coefficients, so `g` is a product of `n` controlled and
+  `n(n-1)/2` doubly controlled rotations. B2 uses `n(n+1)/2` explicit ancillas; B1 uses
+  one ancilla and a mid-circuit measurement and reset after every factor.
+- **C, Gaussian LCU** in real space: the weights are the inverse DFT of `g`, a Gaussian
+  of width `sigma = sqrt(2 nu T) / h` grid cells (`h = L / N`). **Caveat:** at a fixed
+  physical time `sigma` doubles with every added qubit, and preparing the weights costs
+  about `2**q` with `q ~ log2(sigma) + 4`, so this route is EXPONENTIAL in `n`. It is a
+  moderate-`sigma` route. For `sigma` below about 2.5 the Nyquist cut leaves a slowly
+  decaying real-space ripple and the window is the whole grid.
+
+Mid-circuit measurement and reset (needed by B1), as far as it was checked
+(`benchmarks/mid_circuit_probe.py`; the emulated targets use `emulate=True`, no
+credentials):
+
+| Target | `mz` + `reset` in kernels |
+|--------|---------------------------|
+| `qpp-cpu`, CUDA-Q 0.16 | works through `cudaq.run` (a kernel returning `list[bool]`); sampled joint statistics agree with the exact values |
+| `nvidia`, A100, fp64 | works (job 607242): joint statistic, B1 and B2 agree with the exact values within 4 sigma at 20,000 shots; routes A, B, C agree with the spectral reference to 1.6e-15 |
+| IonQ, emulated | B2 compiles and gives counts identical to `qpp-cpu`; B1 compiles through `cudaq.sample` but `cudaq.run` is "not yet supported on this target", so the joint record is unavailable |
+| Quantinuum, emulated | same as IonQ |
+| IQM, emulated | does not get as far as compiling: the target asks the IQM server URL for the device architecture and no server is reachable; not tested |
+| AQT | not a CUDA-Q 0.16 target |
+
+Only `cudaq.run` returns the joint record of the mid-circuit outcomes. `cudaq.sample`
+with `explicit_measurements=True` returned correlations that cannot occur (about 8% of
+the shots of a test circuit), and CUDA-Q 0.16 refuses `sample` for kernels that branch on
+a measurement. Identical counts in an emulated run show that the kernel compiled and ran
+through the target's emulation path; they say nothing about hardware support for
+mid-circuit measurement. `cudaq.translate` accepts such kernels as OpenQASM 2 and as
+`qir-adaptive`, but not as `qir-base`. B2 needs none of this and is the fallback. No QPU
+has run any of these routes.
+
+OpenQASM 2 round trip for AQT-style tooling (AQT is not a CUDA-Q 0.16 target;
+`pip install -e ".[aqt]"` adds Qiskit only, not `qiskit-aqt`;
+`benchmarks/qiskit_roundtrip.py`, n = 3): the spectral circuit, route A, B2 and B1 load in
+Qiskit 2.5.2 with the same gate counts and CX counts as CUDA-Q's lowering, and the
+statevectors agree up to a global phase to 1e-7 (CUDA-Q prints OpenQASM angles with 7
+significant digits, so 1e-12 is not reachable through the text). B1's six mid-circuit
+`measure` and `reset` pairs survive loading and a dump and load round trip, each
+`measure` directly followed by its `reset`. Whether an AQT backend accepts them is not
+checked.
+
+Lowered CX counts (CUDA-Q 0.16 OpenQASM 2 lowering of a builder mirror of the circuit,
+`"negative"` Nyquist, not hardware-native; the `"zero"` convention adds `12n - 22`).
+C is at `sigma = 4` grid cells (width register `q`); every entry equals its closed form
+(`tests/test_oneshot_resources.py`). `benchmarks/oneshot_resources.py` prints the full
+tables for `n = 3..10` with ancillas, depth, `P_succ` and expected shots, each marked
+measured or constructed.
+
+| n | A | B | B2 ancillas | C | C width q |
+|---|---|---|-------------|---|-----------|
+| 4 | 40 | 86 | 10 | 84 | 4 |
+| 6 | 124 | 202 | 21 | 256 | 6 |
+| 8 | 368 | 366 | 36 | 332 | 6 |
+| 10 | 1204 | 578 | 55 | 424 | 6 |
+
 ## Roadmap
 
-- Burgers equation via the Cole-Hopf transform to the heat equation, then a
-  nonlinear variational ansatz.
-- Shot-noise and parameter-shift study of the variational cost.
+- Burgers equation via the Cole-Hopf transform to the heat equation (the one-shot
+  circuit with `c = 0`), then a nonlinear variational ansatz.
 - Hardware runs (IQM, AQT) through CUDA-Q targets, with native gate counts.
 
 ## Citation and license

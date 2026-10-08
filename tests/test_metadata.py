@@ -19,6 +19,10 @@ REQUIRED_KEYS = {
     "scipy",
     "hostname",
     "slurm_job_id",
+    "omp_num_threads",
+    "openblas_num_threads",
+    "slurm_cpus_per_task",
+    "cpus_available",
     "git_commit",
     "git_dirty",
 }

@@ -8,6 +8,8 @@ import cudaq
 import numpy as np
 import pytest
 
+from cudaq_pde.solvers import oneshot
+from cudaq_pde.solvers import oneshot_resources as rr
 from cudaq_pde.solvers import spectral_resources as sr
 
 README = (Path(__file__).resolve().parent.parent / "README.md").read_text()
@@ -57,6 +59,25 @@ def test_resource_table_matches_the_code() -> None:
         assert x_gates == zero["native"]["total_gates"] - neg["native"]["total_gates"]
         assert x_cx == zero["lowered"]["cx"] - neg["lowered"]["cx"] == 12 * n - 22
         assert x_anc == zero["lowered"]["qubits"] - neg["lowered"]["qubits"] == n - 2
+
+
+def test_oneshot_resource_table_matches_the_code() -> None:
+    cudaq.set_target("qpp-cpu")
+    rows = re.findall(
+        r"^\| (\d+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \|$",
+        README,
+        flags=re.MULTILINE,
+    )
+    assert [int(r[0]) for r in rows] == [4, 6, 8, 10]
+    sigma = 4.0  # grid cells, the value stated in the README
+    for n, cx_a, cx_b, anc_b, cx_c, q in (map(int, r) for r in rows):
+        a = 2 * np.pi**2 * sigma**2 / 4**n
+        assert rr.lowered_counts("A", n, a)["cx"] == cx_a
+        assert rr.lowered_counts("B2", n, a)["cx"] == cx_b
+        assert rr.source_ancillas("B2", n) == anc_b
+        plan = oneshot.gaussian_plan(n, a)
+        assert plan.q == q
+        assert rr.lowered_counts("C", n, a)["cx"] == cx_c
 
 
 def test_swaps_claim_in_readme() -> None:

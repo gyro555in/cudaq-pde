@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import cudaq
+import numpy as np
 
 
 def sample_counts(kernel, *args, shots: int, seed: int) -> dict[str, int]:
@@ -43,3 +44,18 @@ class Sampler:
         self.circuits += 1
         self.shots += shots
         return out
+
+
+def run_records(kernel, *args, shots: int, seed: int) -> np.ndarray:
+    """Run a ``-> list[bool]`` kernel with ``cudaq.run``; one row of bits per shot.
+
+    Mid-circuit measurements must be returned by the kernel to be seen per shot:
+    ``cudaq.sample`` keeps only the final register, so joint statistics of
+    mid-circuit outcomes (route B1) need ``cudaq.run``. Seeding as in
+    :func:`sample_counts`.
+    """
+    if shots < 1:
+        raise ValueError(f"shots must be >= 1, got {shots}")
+    cudaq.set_random_seed(seed)
+    out = cudaq.run(kernel, *args, shots_count=shots)
+    return np.array([[int(b) for b in row] for row in out], dtype=np.int8)

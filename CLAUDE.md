@@ -41,8 +41,9 @@ Do NOT load any CUDA module; CUDA-Q wheels bring their own runtime.
 ### Install and test
 ```bash
 pip install -e ".[cu12,dev]"   # or [cu13,dev]; install exactly one CUDA-Q variant
-env/pytest_login.sh             # login node (pinned), skips slow tests: ~39 s CPU
-env/pytest_login.sh --run-slow  # everything except GPU: ~126 s CPU (before commits)
+env/pytest_login.sh             # login node (pinned), slow tests skipped: ~50 s CPU
+env/pytest_login_all.sh [N]     # login node, everything except GPU in N shards (default 3)
+env/pytest_login.sh --run-slow --shard K/N   # one shard by hand; --run-slow alone is refused
 pytest --run-slow               # inside a Slurm job (plain pytest); CI also uses it
 pytest --run-gpu --run-slow -m gpu   # GPU tests, only on a GPU node via sbatch
 ruff check . && ruff format --check .
@@ -52,6 +53,7 @@ ruff check . && ruff format --check .
 - `src/cudaq_pde/`: `classical.py`, `encoding.py`, `encoding_kernels.py`,
   `metadata.py`, `solvers/` (`spectral*.py`: gate-level advection;
   `variational.py` driver and `variational_kernels.py` ansatz: advection-diffusion)
+  (`oneshot*.py`: one-shot advection-diffusion, three block-encoding routes)
 - `tests/`, `examples/`, `benchmarks/`, `logs/` (sbatch output, gitignored),
   `results/` (example plots and JSON, gitignored)
 - Release files: `README.md` (snippets and resource table are checked by
@@ -74,8 +76,14 @@ ruff check . && ruff format --check .
 ## Test markers
 - `gpu`: needs a GPU, skipped unless `--run-gpu`. `slow`: a test (or a group sharing
   cached results) taking more than about 1 s, skipped unless `--run-slow`. Mark new tests
-  slow when they exceed ~1.5 s; CI and sbatch runs pass `--run-slow`. Login-node CPU time
-  of the default run: 125.5 s before the marker, 38.6 s after; with `--run-slow` 126 s.
+  slow when they exceed ~1.5 s; CI and sbatch runs pass `--run-slow`.
+- Login-node budget: NO single invocation may exceed about 150 s of CPU (the node kills
+  at 300 s). `--shard K/N` (conftest: tests sorted by node id, dealt round robin) splits
+  a run; `env/pytest_login.sh` refuses `--run-slow` without `--shard`, and
+  `env/pytest_login_all.sh [N]` runs every shard in its own process and prints each
+  shard's CPU seconds. Measured after CP7 with N = 3: 98 s, 92 s, 76 s (1420 tests,
+  about 266 s in total including three start-ups); the default run alone is about 50 s.
+  Raise N when a shard nears 150 s. Do not run `--run-slow` unsharded in one process.
   `tests/test_markers.py` tests the mechanism with the repository's real `conftest.py`.
 
 ## Numerical reproducibility (non-negotiable)
@@ -199,10 +207,11 @@ ruff check . && ruff format --check .
 
 ## Measurable path (solvers/measurable*.py, sampling.py, spectral_measure.py)
 - Rules enforced by `tests/test_hardware_path_purity.py` (AST scan): hardware-path
-  modules never call `cudaq.get_state`; only `variational.py` and `spectral.py` do
-  (SIMULATOR-ONLY); `cudaq.sample` is called only in `sampling.sample_counts`, which
-  owns seeding (`Sampler`: `base_seed + circuit_index`). Statevector checks live in
-  tests and are labelled STATEVECTOR CHECK.
+  modules never call `cudaq.get_state`; only `variational.py`, `spectral.py` and
+  `oneshot_sim.py` do (SIMULATOR-ONLY); `cudaq.sample` is called only in
+  `sampling.sample_counts` and `cudaq.run` only in `sampling.run_records` (one call site
+  each), which own seeding (`Sampler`: `base_seed + circuit_index`). Statevector checks
+  live in tests and are labelled STATEVECTOR CHECK.
 - QFT shifts and the LCU SELECT reuse the CP3 `phase_layer_mirrored` (and its
   controlled twin in `spectral_kernels.py`); angles come from
   `spectral.shift_angles` (a shift is advection by one cell, c*dt = +-L/N, "negative"
@@ -228,6 +237,66 @@ ruff check . && ruff format --check .
   `k_fft = rev(r)`; `P[k] = |u_hat_k|^2/(N ||u||^2)`; advection leaves it invariant;
   error follows `sqrt((1 - sum p^2)/N)` and scales as shots^-0.51 (n = 3..8).
 
+## One-shot advection-diffusion (solvers/oneshot*.py)
+- Circuit `QFT-dagger -> advection phases (CP3) -> block-encoded diag(g) -> QFT`,
+  `g(m) = exp(-a m^2)`, `a = nu T (2 pi / L)^2`, ancillas post-selected on 0. One circuit
+  for any `T`, no explicit-Euler stability limit. `g` is even in `m`, so only the
+  advection part sees the Nyquist convention. `P_succ = sum |c_m|^2 g(m)^2 =
+  ||u(T)||^2 / ||u0||^2` (route C: divided by `lambda^2`). All routes match
+  `classical.evolve_spectral` (observed ~1e-15, asserted 1e-12), both conventions.
+- `sigma = sqrt(2 nu T) / h` grid cells with `h = L / 2**n` is the width of the
+  real-space Gaussian, `a = 2 pi^2 sigma^2 / N^2` (tested). At fixed physical `T`,
+  `sigma` doubles with every qubit.
+- Files: `oneshot.py` (classical plans, no state vectors), `oneshot_kernels.py`,
+  `oneshot_sim.py` (SIMULATOR-ONLY post-selection drivers), `oneshot_resources.py`.
+  The system register keeps the swap-free mirrored layout (Fourier bit b on qubit
+  n-1-b); ancillas are separate qviews, never one padded vector.
+- Route A: one ancilla, multiplexed `RY(2 arccos g)` (Gray code, `2**n` RY + `2**n` CX).
+  Exact reference for small n; gate count exponential.
+- Route B: sign bit = qubit 0; a CX from it onto the low bits (self-inverse) gives
+  `v = low XOR s`, and `m^2 = v^2 + s (2 v + 1)` has only positive coefficients, so
+  `g` is a product of `n` CRY and `n(n-1)/2` CCRY contractions (two's complement has
+  negative cross terms with the sign bit, factors above 1, not block-encodable; tested).
+  A CCRY is written as 3 CRY + 2 CX (8 lowered CX): CUDA-Q 0.16's own two-control RY
+  lowers to 14 CX plus a compiler ancilla (measured). B2 = `n(n+1)/2` explicit
+  ancillas; B1 = one ancilla with `mz` then `reset` after each factor, run through
+  `cudaq.run` (`sampling.run_records`); the factors commute, so the all-zero record has
+  the same probability (tested against B2 and the exact distribution).
+- Mid-circuit `mz` + `reset` status (report, do not guess; `benchmarks/mid_circuit_probe.py`):
+  works on qpp-cpu and on the A100 (nvidia fp64, job 607242: joint statistic, B1, B2 within
+  4 sigma, routes A/B/C vs reference 1.6e-15) through `cudaq.run` on a `-> list[bool]`
+  kernel. Only `cudaq.run` gives the joint record: `cudaq.sample` with named registers
+  keeps only the final register, `sample(..., explicit_measurements=True)` returned
+  impossible correlations (~8% of shots), and 0.16 refuses `sample` for kernels that
+  branch on a measurement ("use cudaq.run"). Emulated remote targets
+  (`set_target(name, emulate=True)`, documented for ionq and quantinuum): `cudaq.run` is
+  "not yet supported on this target" for both, so B1's joint record is unavailable there;
+  B2 compiles and is identical to qpp-cpu, B1 compiles as a plain `sample` kernel
+  (`oneshot_b1_sample_loaded`, counts identical, no joint statistic). IQM emulation
+  needs the device architecture from the server URL (no server, no mock in the wheel):
+  not tested. Emulation proves compilation and a local run, not hardware support. IonQ's
+  target emits `qir-base` and removes measurements; Quantinuum's emits adaptive QIR. AQT
+  is not a 0.16 target. `cudaq.translate` accepts mid-circuit kernels as OpenQASM 2 and
+  `qir-adaptive`; `qir-base` fails. Keep B2 as the fallback.
+- OpenQASM round trip (`benchmarks/qiskit_roundtrip.py`, optional extra `aqt` = Qiskit
+  only, `qiskit-aqt` NOT installed): spectral, A, B2 and B1 at n = 3 load in Qiskit 2.5.2
+  with equal gate and CX counts; statevectors agree to ~1e-7 because CUDA-Q prints
+  OpenQASM angles with `%e` (7 digits); B1's measure+reset pairs survive load and
+  dump/load. AQT backend acceptance of mid-circuit reset is not checked.
+- Route C: the multiplier `g` is the DFT of real weights `w_s` (inverse DFT of `g`,
+  signed). Window `s in [-2**(q-1), 2**(q-1))`, `q` minimal with dropped L1 mass at most
+  1e-13; LCU `A_L^dagger SELECT A_R` with a signed RY-tree `A_R` and an unsigned `A_L`;
+  the controlled shifts are phase layers inside the SAME QFT sandwich as the advection
+  (`q n` cr1). `lambda = sum |w_s|`. Cost of the tree `~ 2**q ~ sigma`: EXPONENTIAL in n
+  at fixed physical `T`; for `sigma < ~2.5` the Nyquist cut leaves a ripple and the
+  window is the whole grid (`q = n`). Moderate-`sigma` route only.
+- Counts (`benchmarks/oneshot_resources.py`, lowered CX, "negative"; every one measured
+  from the OpenQASM lowering of a builder mirror and equal to the construction): n = 10:
+  A 1204, B 578 (55 ancillas for B2, 1 for B1 with 55 mid-circuit measurements), C at
+  `sigma = 4` 424 (q = 6). B beats A from n = 8. `"zero"` adds `12n - 22` CX.
+- `qasm_stats` splits statements on `;` (CUDA-Q writes `reset q[3];ry(...) q[3];` on one
+  line; splitting on lines silently dropped the gate after each reset).
+
 ## Hardware portability rule
 - Solvers intended for QPUs are gate-level @cudaq.kernel code
   (QFT, exp_pauli, rotations, CNOT). No cudaq.evolve / dynamics target in
@@ -242,7 +311,8 @@ ruff check . && ruff format --check .
 1. Linear advection (unitary): spectral solver, QFT -> diagonal phases -> iQFT.
 2. Advection-diffusion (non-unitary): variational time stepping
    (Lubasch et al., PRA 101, 010301, 2020 style cost).
-3. Burgers: Cole-Hopf to heat equation, then nonlinear variational ansatz.
+3. Burgers: Cole-Hopf to heat equation (the one-shot circuit with c = 0 evolves phi),
+   then nonlinear variational ansatz.
 Classical reference (numpy FFT, exact for linear periodic case) is the
 ground truth for every test.
 
