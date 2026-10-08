@@ -20,3 +20,18 @@ def two_factor_probe(a: float, b: float, t: float) -> list[bool]:
     reset(q[1])
     out = mz(q[0])
     return [m1, m2, out]
+
+
+@cudaq.kernel
+def two_factor_probe_sample(a: float, b: float, t: float):
+    """Same circuit without a return value, for ``cudaq.sample`` (named registers or
+    ``explicit_measurements=True``): measurements in execution order m1, m2, out."""
+    q = cudaq.qvector(3)
+    ry(a, q[0])
+    ry.ctrl(b, q[0], q[1])
+    mz(q[1])
+    reset(q[1])
+    ry.ctrl(t, q[0], q[1])
+    mz(q[1])
+    reset(q[1])
+    mz(q[0])

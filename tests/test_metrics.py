@@ -157,6 +157,106 @@ def test_stacks_match_row_by_row_and_are_deterministic() -> None:
     np.testing.assert_array_equal(stack, metrics.state_angles(psis, phis))
 
 
+# ------------------------------------------- summation-order diagnostic (734adfc)
+
+
+def seq_dot(a, b) -> float:
+    """Strictly left-to-right accumulation (``cumsum``): index order is the order."""
+    return float(np.cumsum(a * b)[-1])
+
+
+def old_infidelity_seq(psi, phi) -> float:
+    return 1.0 - seq_dot(psi, phi) ** 2 / (seq_dot(psi, psi) * seq_dot(phi, phi))
+
+
+def old_angle_seq(psi, phi) -> float:
+    return math.asin(math.sqrt(max(0.0, old_infidelity_seq(psi, phi))))
+
+
+def summation_orders(psi) -> dict[str, np.ndarray]:
+    """Six orders of the SAME components (a permutation of the index applied to both
+    vectors changes only the order of the sums)."""
+    idx = np.arange(psi.size)
+    return {
+        "natural": idx,
+        "reversed": idx[::-1],
+        "ascending |psi|": np.argsort(np.abs(psi)),
+        "descending |psi|": np.argsort(-np.abs(psi)),
+        "even then odd": np.concatenate([idx[::2], idx[1::2]]),
+        "random (seed 0)": np.random.default_rng(0).permutation(psi.size),
+    }
+
+
+def results_by_order(delta: float, seed: int = 3):
+    psi, phi = generic_pair(delta, seed)
+    out = {}
+    for name, perm in summation_orders(psi).items():
+        a, b = psi[perm], phi[perm]
+        out[name] = {
+            "old_infidelity": old_infidelity_seq(a, b),
+            "old_angle": old_angle_seq(a, b),
+            "stable_infidelity": metrics.infidelity(a, b),
+            "stable_angle": metrics.state_angle(a, b),
+        }
+    return psi, phi, out
+
+
+def spread(results: dict, key: str) -> float:
+    vals = [r[key] for r in results.values()]
+    return max(vals) - min(vals)
+
+
+@pytest.mark.parametrize("delta", DELTAS)
+def test_old_form_depends_on_the_summation_order_and_the_stable_one_does_not(
+    delta,
+) -> None:
+    """The diagnostic behind commit 734adfc (``test_global_error_obeys_angle_
+    accumulation_bound[4]`` flaked in CI, where summation order differs between runs).
+
+    Same vectors (dimension 16, angle ``delta``), six summation orders. Observed for
+    ``delta`` = 1e-4 ... 1e-8 (five angles x five non-reference orders = 25
+    combinations):
+
+    * old ``1 - F`` / ``arcsin(sqrt(1 - F))``: the result differs from the natural-order
+      result in **21 of 25** combinations; the angle moves by 3e-12 (1e-4), 3e-11,
+      6e-11, 3e-9, 2e-8 (1e-8, where the angle itself is 1e-8: all digits lost); the
+      relative spread of ``1 - F`` goes from 7e-8 to 9;
+    * stable ``atan2`` form: the angle moves by at most 0.1 eps (1e-17) over the six
+      orders, the relative spread of its infidelity is 2e-13 ... 2e-9 (``<= 4 eps /
+      delta``, the backward-stable level). It is NOT bitwise identical (it differs in 16
+      of the 25 combinations, by a rounding error of the sums), it is invariant to well
+      below the size of the rounding in the old form.
+    """
+    psi, phi, res = results_by_order(delta)
+    exact = exact_angle(psi, phi)
+    exact_inf = exact_sin2(psi, phi)
+    # every ordering of the stable form stays within a few eps of the true angle
+    for r in res.values():
+        assert abs(r["stable_angle"] - exact) <= 1.0 * EPS
+    assert spread(res, "stable_angle") <= 1.0 * EPS  # observed 0.1 eps
+    assert spread(res, "stable_infidelity") / exact_inf <= 4 * EPS / delta
+    # the old form moves with the order, by far more than the stable form
+    assert spread(res, "old_angle") > 1e-12  # observed 3e-12 .. 2e-8
+    assert spread(res, "old_angle") > 1e3 * spread(res, "stable_angle")
+
+
+def test_most_orderings_change_the_old_form() -> None:
+    changed_old = changed_stable = total = 0
+    for delta in DELTAS:
+        _, _, res = results_by_order(delta)
+        ref = res["natural"]
+        for name, r in res.items():
+            if name == "natural":
+                continue
+            total += 1
+            changed_old += r["old_infidelity"] != ref["old_infidelity"]
+            changed_stable += r["stable_angle"] != ref["stable_angle"]
+    assert total == 25
+    assert changed_old >= 15  # observed 21 of 25
+    # the stable form also changes in the last bits, but by <= 0.1 eps (asserted above)
+    assert changed_stable <= total
+
+
 # ---------------------------------------------------- the solver's cost near zero
 
 

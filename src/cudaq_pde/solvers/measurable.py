@@ -20,8 +20,10 @@ initial state.
 Gradients are exact parameter-shift gradients (every RY angle appears once and
 ``C = <psi|(I - |b_hat><b_hat|)|psi>`` is an expectation value):
 ``dC/dtheta_i = [C(theta_i + pi/2) - C(theta_i - pi/2)] / 2``, i.e. ``2 P`` circuits per
-gradient. The optimizer is Adam with a linearly decaying learning rate and a fixed
-number of iterations (L-BFGS-B and COBYLA do not cope with shot noise).
+gradient. The optimizer is heavy-ball (momentum) descent with a linearly decaying
+learning rate and a fixed number of iterations (:func:`momentum_descent`; L-BFGS-B and
+COBYLA do not cope with shot noise, and Adam reached only 3e-6 on exact gradients
+against 4e-11 for heavy ball).
 """
 
 from __future__ import annotations

@@ -67,6 +67,8 @@ ruff check . && ruff format --check .
   to `results/`. On the login node run them pinned: `taskset -c 0 python examples/<file>.py`.
 - `env/`: activation script, lock file, one-off environment checks (excluded from ruff)
 - Submit sbatch jobs from the repo root, output goes to `logs/%x_%j.out`.
+- `docs/reproduce_paper.md`: command and output path of every paper table and figure
+  (tested); `benchmarks/plots.py` draws the figures from the stored JSON.
 - `benchmarks/spectral_resources.py` prints the resource table;
   `benchmarks/variational_report.py` prints the variational accuracy tables;
   `benchmarks/gpu_tests.sbatch` runs `pytest --run-gpu -m gpu` on one A100.
