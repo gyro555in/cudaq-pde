@@ -72,6 +72,8 @@ All notable changes to this project are documented here. The format follows
   splits statements on `;`.
 
 ### Changed
+- `docs/reproduce_paper.md` and its test use the paper's table numbers (Tables 1 to 8,
+  Figures 2 to 4); the 100000-shot mid-circuit record tests are marked slow.
 - Angles and infidelities between nearly equal states are computed stably
   (`cudaq_pde.metrics`: `atan2` of the orthogonal residual) instead of `1 - F`, in the
   variational cost, the reference comparison, the numpy ansatz cost, the cost statistics
