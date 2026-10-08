@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Paper support (no solver behaviour or number changed): `benchmarks/plots.py` draws
+  Figures 2 to 4 (PNG and PDF in `results/figures/`) from the stored JSON only;
+  `docs/reproduce_paper.md` maps every table and figure to its command and output path
+  (checked by `tests/test_reproduce_paper.py`); `benchmarks/mid_circuit_probe_stats.py` and
+  `tests/test_mid_circuit_stats.py` reproduce the `cudaq.run` against
+  `sample(..., explicit_measurements=True)` finding with the exact record distribution;
+  `tests/test_metrics.py` gains the summation-order diagnostic behind the stable
+  `atan2` angle; `benchmarks/oneshot_fp64_agreement.py` (called by
+  `mid_circuit_probe.sbatch`) writes the fp64 agreement of routes A, B2, C to JSON with
+  metadata.
 - Cyclic shift kernels `increment` / `decrement` (QFT, multi-controlled X, and
   explicit-ancilla forms) and LCU preparation of `(I + dt L)|psi>` with
   post-selection, with resource tables (`benchmarks/measurable_resources.py`). The
