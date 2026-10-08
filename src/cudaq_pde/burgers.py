@@ -187,6 +187,36 @@ def lab_positions(
     return np.mod(np.asarray(x_moving, dtype=np.float64) + U0 * T, L)
 
 
+def _log_weights(x, w0, nu, t, L, n_fine, images):
+    """Log integrand of the periodic heat kernel: ``(logw, z)``, shape (x, y, m)."""
+    x = np.atleast_1d(np.asarray(x, dtype=np.float64))
+    y = np.arange(n_fine) * (L / n_fine)
+    W = antiderivative(w0(y), L)
+    m = np.arange(-images, images + 1) * L
+    z = x[:, None, None] - y[None, :, None] + m[None, None, :]
+    return -W[None, :, None] / (2.0 * nu) - z**2 / (4.0 * nu * t), z
+
+
+def exact_log_phi(
+    x: NDArray[np.floating],
+    w0: Callable[[NDArray], NDArray],
+    nu: float,
+    t: float,
+    L: float = TWO_PI,
+    n_fine: int = 4096,
+    images: int = 3,
+) -> NDArray[np.float64]:
+    """``ln phi(x, t)`` of the exact Cole-Hopf solution, up to a constant in x.
+
+    Needed where ``phi`` itself is far below what the double-precision grid solution
+    can represent (the valley at small ``nu``); ``t > 0``.
+    """
+    if t <= 0.0:
+        raise ValueError("exact_log_phi needs t > 0")
+    logw, _ = _log_weights(x, w0, nu, t, L, n_fine, images)
+    return logsumexp(logw, axis=(1, 2))
+
+
 def exact_cole_hopf(
     x: NDArray[np.floating],
     w0: Callable[[NDArray], NDArray],
@@ -205,13 +235,9 @@ def exact_cole_hopf(
     must have zero mean.
     """
     x = np.atleast_1d(np.asarray(x, dtype=np.float64))
-    y = np.arange(n_fine) * (L / n_fine)
-    W = antiderivative(w0(y), L)
     if t == 0.0:
         return np.asarray(w0(x), dtype=np.float64)
-    m = np.arange(-images, images + 1) * L
-    z = x[:, None, None] - y[None, :, None] + m[None, None, :]
-    logw = -W[None, :, None] / (2.0 * nu) - z**2 / (4.0 * nu * t)
+    logw, z = _log_weights(x, w0, nu, t, L, n_fine, images)
     norm = logsumexp(logw, axis=(1, 2))
     weights = np.exp(logw - norm[:, None, None])
     return np.sum(weights * z / t, axis=(1, 2))
