@@ -11,12 +11,16 @@ Table 1  per (case, nu, n, T): P_succ of the heat step, min p of the grid soluti
          (n_unres = grid points with p <= 0 or off by > 10% in ln p), the error terms of
          u at three probes (grid/aliasing, finite difference), and the shots for a
          standard error EPS of u_hat at each probe (best, worst) and to see the rarest
-         bin (30 expected counts). Shots are CONSTRUCTED (delta method).
+         bin (30 expected counts). Shots are CONSTRUCTED (delta method). "hw-res" has
+         one letter per probe (pi/4, pi/2, 3pi/4): Y when min(p_{j+1}, p_{j-1}) is at
+         least the noise floor (1e-3, a MODELLING ASSUMPTION for combined gate and
+         readout error per shot, to be replaced by device calibration data), n when the
+         probe is unresolvable regardless of shots.
 Table 2  real CUDA-Q shots: scatter of u_hat at probes whose required shots are feasible
          (<= 3e6) against the delta-method prediction (z = max |error| / sigma).
 Table 3  phi power spectrum (cheap global observable): RMS error vs shots against the
          multinomial prediction, and the p-weighted mean square velocity
-         4 nu^2 sum k^2 P_k (NOT the L2 energy of u) against the classical value.
+         4 nu^2 sum k^2 P_k, the p-weighted mean of u^2, against the classical value.
 """
 
 import json
@@ -41,7 +45,7 @@ def table1(rows: list[dict]) -> None:
         f"{'case':>5} {'nu':>5} {'n':>2} {'T':>3} {'P_succ':>7} {'min p grid':>10} "
         f"{'min p true':>10} {'<fp64':>5} {'unres':>5} | {'err_grid(max)':>13} "
         f"{'err_fd(max)':>11} | {'shots best':>10} {'shots worst':>11} "
-        f"{'see rarest':>10}"
+        f"{'see rarest':>10} | {'hw-res':>6}"
     )
     print(head)
     print("-" * len(head))
@@ -51,6 +55,7 @@ def table1(rows: list[dict]) -> None:
                 for n in NS:
                     r = st.study_row(case, nu, n, T, EPS)
                     rows.append(r)
+                    hw = "".join("Y" if v else "n" for v in r["resolvable_on_hardware"])
                     print(
                         f"{case:>5} {nu:>5} {n:>2} {T:>3} {r['p_succ']:7.3f} "
                         f"{r['min_p_grid']:10.2e} {r['min_p_true']:10.2e} "
@@ -58,7 +63,8 @@ def table1(rows: list[dict]) -> None:
                         f"{r['n_unresolved']:>5} | "
                         f"{max(r['err_grid']):13.1e} {max(r['err_fd']):11.1e} | "
                         f"{r['shots_best']:10.2e} {r['shots_worst']:11.2e} "
-                        f"{r['shots_to_see_all']:10.2e}"
+                        f"{r['shots_to_see_all']:10.2e} | "
+                        f"{hw:>6}"
                     )
             print()
 

@@ -40,6 +40,12 @@ CASES: dict[str, Callable[[NDArray], NDArray]] = {
     "asym": lambda x: np.sin(x) + 0.5 * np.sin(2 * x),
 }
 FP64_AMPLITUDE_FLOOR = 1e-15  # sqrt(p) below this is below double-precision resolution
+NOISE_FLOOR = 1e-3
+"""Default hardware noise floor on a bin probability: a MODELLING ASSUMPTION for the
+combined gate and readout error per shot, to be replaced by device calibration data. A
+probe whose smaller neighbour probability ``min(p_{j+1}, p_{j-1})`` is below it is
+unresolvable regardless of the number of shots (the bin is dominated by error
+counts)."""
 
 
 def probe_indices(n: int) -> NDArray[np.int64]:
@@ -67,8 +73,14 @@ def study_row(
     eps: float = 0.05,
     c_min: int = 30,
     L: float = TWO_PI,
+    noise_floor: float = NOISE_FLOOR,
 ) -> dict:
-    """One row of the dynamic-range table (classical formulas, no sampling)."""
+    """One row of the dynamic-range table (classical formulas, no sampling).
+
+    ``resolvable_on_hardware`` is per probe: ``min(p_{j+1}, p_{j-1}) >= noise_floor``
+    with ``p`` the distribution the circuit samples (see :data:`NOISE_FLOOR`; a
+    modelling assumption, not a device measurement).
+    """
     w0f = CASES[case]
     x = classical.grid(n, L)
     d = B.discrete_burgers(w0f(x), nu, T, L)
@@ -82,6 +94,8 @@ def study_row(
     qp, qm = be.probe_probabilities(d.p, d.p_succ, probes)
     with np.errstate(divide="ignore", invalid="ignore"):
         shots = be.shots_for_error(qp, qm, eps, nu, h)
+    jp, jm = be.neighbours(probes, 2**n)
+    p_nb = np.minimum(d.p[jp], d.p[jm])
     q_min = d.p_succ * float(np.min(d.p[d.p > 0])) if np.any(d.p > 0) else 0.0
     return {
         "case": case, "nu": nu, "n": n, "T": T, "eps": eps,
@@ -100,6 +114,9 @@ def study_row(
         "shots_per_probe": shots.tolist(),
         "shots_best": float(np.nanmin(shots)),
         "shots_worst": float(np.nanmax(shots)),
+        "noise_floor": noise_floor,
+        "p_neighbour_min": p_nb.tolist(),
+        "resolvable_on_hardware": (p_nb >= noise_floor).tolist(),
         "shots_to_see_all": c_min / q_min if q_min > 0 else float("inf"),
     }  # fmt: skip
 

@@ -297,26 +297,35 @@ The state carries `phi`, which is real and positive, and sampling gives
   delta-method prediction; sampled runs at `nu = 0.5` and `0.1` with 5 seeds agree with it,
   max |z| 2.3):
 
-| nu | min p (n = 6, exact) | P_succ | shots, pi/4 | shots, 3pi/4 | resolved n = 5 / 6 |
-|----|----------------------|--------|-------------|--------------|--------------------|
-| 0.5 | 3.23e-03 | 0.807 | 2.48e+05 | 1.24e+06 | yes / yes |
-| 0.1 | 2.09e-09 | 0.719 | 1.63e+04 | 1.05e+09 | yes / yes |
-| 0.05 | 8.63e-18 | 0.713 | 1.65e+04 | 1.71e+14 | yes / yes |
-| 0.02 | 1.89e-43 | 0.709 | 4.64e+05 | 1.95e+31 | no / no |
+| nu | min p (n = 6, exact) | P_succ | shots, pi/4 | shots, 3pi/4 | resolvable on hardware (pi/4, pi/2, 3pi/4) | resolved n = 5 / 6 |
+|----|----------------------|--------|-------------|--------------|--------------------------------------------|--------------------|
+| 0.5 | 3.23e-03 | 0.807 | 2.48e+05 | 1.24e+06 | yes, yes, yes | yes / yes |
+| 0.1 | 2.09e-09 | 0.719 | 1.63e+04 | 1.05e+09 | yes, no, no | yes / yes |
+| 0.05 | 8.63e-18 | 0.713 | 1.65e+04 | 1.71e+14 | yes, no, no | yes / yes |
+| 0.02 | 1.89e-43 | 0.709 | 4.64e+05 | 1.95e+31 | no, no, no | no / no |
+
+  "Resolvable on hardware" applies a noise floor to the probability of the smaller
+  neighbour bin: a probe with `min(p_{j+1}, p_{j-1})` below the floor (default 1e-3,
+  `burgers_study.NOISE_FLOOR`) is unresolvable regardless of the number of shots, because
+  error counts of that size swamp the signal. **The floor is a modelling assumption**
+  for the combined gate and readout error per shot, to be replaced by device calibration
+  data; it is not a measurement. The sampled confirmations above are noiseless simulator
+  runs and do not apply it (at `nu = 0.1` the `pi/2` probe is statistically fine but
+  below the floor).
 
   Away from the valley the velocity is cheap; in the valley, where the shock forms, it
   is not: about 1e9 shots at `nu = 0.1` and 1e14 at `nu = 0.05` for one probe at `3pi/4`.
   At `nu = 0.02` the grid solution is not the physical one at all: the heat kernel
   cannot damp mode `N/2` by the `e^-50` the valley needs, so 13 to 37 of the 32 or 64 grid
-  points are wrong (over both cases and `T = 0.5, 1`) (non-positive or off by more than 10% in `ln p`), the true valley is
-  below 1e-43 (below double precision), and the shot numbers for that row describe an
+  points are wrong (non-positive or off by more than 10% in `ln p`, over both cases and
+  `T = 0.5, 1`), the true valley is below 1e-43 (below double precision), and the shot numbers for that row describe an
   aliased state. Quantified, not avoided: the small-`nu` regime is out of reach of this
   readout.
 - **Spectrum of phi, a cheap global observable.** Measuring in the Fourier basis (the
   final QFT is dropped) gives `P[k] = |phi_hat_k|**2 / (N ||phi||**2)`; the error follows
   the multinomial prediction at every `nu` (no logarithm of tiny numbers), and
-  `4 nu**2 sum k**2 P_k` is the mean of `u**2` weighted by `p` (not the L2 energy of `u`).
-  It carries no pointwise velocity.
+  `4 nu**2 sum k**2 P_k` is the `p`-weighted mean of `u**2`. It carries no pointwise
+  velocity.
 - **Hardware fit** (case `sin x + 0.5 sin 2x`, `T = 1`; lowered CX of the gate-loaded
   `phi0` plus the heat step, measured as above; the loader alone is `2**n - 2` CX, so
   route A grows like `2 * 2**n`):
@@ -337,6 +346,22 @@ The state carries `phi`, which is real and positive, and sampling gives
   configurations are route A at `n <= 5` (B2 fits only up to `n = 5`).
   `benchmarks/burgers_dynamic_range.py` and `benchmarks/burgers_resources.py` print the
   full tables (both cases, `T = 1` and `0.5`, sampled confirmations, spectrum errors).
+
+### Limits of the Cole-Hopf readout
+
+- **Readout cost is exponential in the inverse viscosity.** `p = phi**2` has its minimum
+  `p_min ~ exp(-Delta/nu)`, with `Delta = max W - min W` the range of `W = int u0` (2 for
+  `sin x`), and the shots for a pointwise velocity scale as `1/(P_succ p_min)`, that is
+  `~ exp(Delta/nu)`. Each factor of 5 in `nu` is many orders of magnitude in shots.
+- **The heat step is not the bottleneck.** `P_succ` stays about 0.7 (0.57 to 0.88 over
+  every row of both cases, `T = 0.5, 1`), so the acceptance costs a factor of about 1.4
+  in shots; the cost sits entirely in the readout of the rare bins.
+- **Loading `phi0` is exponential.** The gate-loaded input costs `2**n - 2` CX (and
+  `2**n - 1` rotations), about 30% of route A's total at `n = 5` and the dominant term
+  beyond; there is no scalable loader here. The input cost is exponential in `n`
+  independently of the readout cost.
+- **The noise floor is an assumption** (see above): with a floor of 1e-3 only probes in the
+  high-`phi` region are usable for `nu <= 0.1`.
 
 ## Roadmap
 

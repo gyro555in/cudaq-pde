@@ -52,6 +52,8 @@ All notable changes to this project are documented here. The format follows
   as `nu` shrinks (including the regime where the grid solution is unresolved), the
   `phi` power spectrum readout, resource tables with 20- and 24-qubit fit flags
   (`benchmarks/burgers_dynamic_range.py`, `benchmarks/burgers_resources.py`).
+- Burgers dynamic-range table: per-probe "resolvable on hardware" flag from a noise floor
+  on `min(p_{j+1}, p_{j-1})` (default 1e-3, a modelling assumption), and a "limits" section.
 - `oneshot_resources.build_mirror(..., advection=False, loader=...)`.
 
 ### Fixed

@@ -56,6 +56,41 @@ def test_resolved_flag_and_the_fp64_floor() -> None:
     assert hard["min_p_grid"] > 1e-20 > hard["min_p_true"]  # roundoff, not physics
 
 
+def test_noise_floor_default_is_a_documented_assumption() -> None:
+    assert st.NOISE_FLOOR == 1e-3
+    assert (
+        "MODELLING ASSUMPTION" in st.__doc__
+        or "MODELLING ASSUMPTION" in open(st.__file__).read()
+    )
+
+
+def test_resolvable_flag_uses_the_smaller_neighbour_against_the_floor() -> None:
+    n, nu = 6, 0.1
+    r = st.study_row("sin", nu, n, 1.0)
+    d = B.discrete_burgers(np.sin(classical.grid(n)), nu, 1.0)
+    for j, pmin, ok in zip(
+        r["probes"], r["p_neighbour_min"], r["resolvable_on_hardware"], strict=True
+    ):
+        assert pmin == min(d.p[(j + 1) % 2**n], d.p[(j - 1) % 2**n])
+        assert ok == (pmin >= st.NOISE_FLOOR)
+
+
+def test_resolvable_pattern_for_sin_at_t_one() -> None:
+    expect = {0.5: [True] * 3, 0.1: [True, False, False], 0.05: [True, False, False],
+              0.02: [False] * 3}  # fmt: skip
+    for nu, flags in expect.items():
+        for n in (5, 6):
+            assert st.study_row("sin", nu, n, 1.0)["resolvable_on_hardware"] == flags
+
+
+def test_noise_floor_is_a_parameter_and_does_not_change_the_shots() -> None:
+    lo = st.study_row("sin", 0.1, 5, noise_floor=1e-12)
+    hi = st.study_row("sin", 0.1, 5, noise_floor=0.5)
+    assert all(lo["resolvable_on_hardware"]) and not any(hi["resolvable_on_hardware"])
+    assert lo["shots_per_probe"] == hi["shots_per_probe"]
+    assert lo["noise_floor"] == 1e-12 and hi["noise_floor"] == 0.5
+
+
 def test_cost_grows_as_nu_shrinks_at_the_hardest_probe() -> None:
     worst = [st.study_row("sin", nu, 5)["shots_worst"] for nu in (0.5, 0.1, 0.05)]
     assert worst[0] < worst[1] < worst[2]
@@ -109,7 +144,7 @@ def test_spectrum_readout_cost_does_not_blow_up_with_small_nu() -> None:
 
 
 def test_weighted_mean_square_velocity_identity() -> None:
-    """``4 nu^2 sum k^2 P_k`` is the p-weighted mean of ``u^2`` (not the energy)."""
+    """``4 nu^2 sum k^2 P_k`` is the p-weighted mean of ``u^2``."""
     n, nu, T = 6, 0.5, 1.0
     d = B.discrete_burgers(np.sin(classical.grid(n)), nu, T)
     m = np.fft.fftfreq(2**n, 1.0 / 2**n)
@@ -117,8 +152,8 @@ def test_weighted_mean_square_velocity_identity() -> None:
 
     msq = 4 * nu**2 * np.sum(m**2 * classical_power_spectrum(d.phiT))
     assert msq == pytest.approx(np.sum(d.p * d.u_spectral**2), rel=1e-6)
-    energy = np.mean(d.u_spectral**2)
-    assert abs(msq - energy) > 1e-3 * energy  # a different weighting, labelled as such
+    plain_mean = np.mean(d.u_spectral**2)  # unweighted: a different quantity
+    assert abs(msq - plain_mean) > 1e-3 * plain_mean
 
 
 def test_sampled_weighted_velocity_is_within_its_standard_error() -> None:

@@ -86,12 +86,12 @@ def test_burgers_dynamic_range_table_matches_the_code() -> None:
     cudaq.set_target("qpp-cpu")
     rows = re.findall(
         r"^\| (0\.\d+) \| ([\d.e+-]+) \| ([\d.]+) \| ([\d.e+-]+) \| ([\d.e+-]+) "
-        r"\| (yes|no) / (yes|no) \|$",
+        r"\| ((?:yes|no), (?:yes|no), (?:yes|no)) \| (yes|no) / (yes|no) \|$",
         README,
         flags=re.MULTILINE,
     )
     assert [float(r[0]) for r in rows] == [0.5, 0.1, 0.05, 0.02]
-    for nu, min_p, p_succ, s_lo, s_hi, res5, res6 in rows:
+    for nu, min_p, p_succ, s_lo, s_hi, hw, res5, res6 in rows:
         nu = float(nu)
         r5 = st.study_row("sin", nu, 5, 1.0)
         r6 = st.study_row("sin", nu, 6, 1.0)
@@ -100,6 +100,9 @@ def test_burgers_dynamic_range_table_matches_the_code() -> None:
         assert float(s_lo) == pytest.approx(r6["shots_per_probe"][0], rel=5e-3)
         assert float(s_hi) == pytest.approx(r6["shots_per_probe"][2], rel=5e-3)
         assert (res5 == "yes") == r5["resolved"] and (res6 == "yes") == r6["resolved"]
+        flags = ["yes" if v else "no" for v in r6["resolvable_on_hardware"]]
+        assert hw == ", ".join(flags)  # the pattern is the same for n = 5
+        assert r5["resolvable_on_hardware"] == r6["resolvable_on_hardware"]
 
 
 def test_burgers_hardware_table_matches_the_code() -> None:

@@ -334,8 +334,17 @@ ruff check . && ruff format --check .
   more than 10% in `ln p` or non-positive, the heat kernel cannot damp mode N/2 by `e^-50`,
   the true valley is ~1e-43, below double precision): rows are flagged `resolved = False`.
   Sampled runs (5 seeds, up to 3e6 shots) at nu = 0.5, 0.1 match the prediction (max |z| 2.3).
+- Noise floor (`burgers_study.NOISE_FLOOR = 1e-3`, parameter `noise_floor`): a probe with
+  `min(p_{j+1}, p_{j-1})` below it is "unresolvable regardless of shots" (`resolvable_on_hardware`
+  per probe). It is a MODELLING ASSUMPTION for combined gate and readout error per shot, to be
+  replaced by device calibration data; the sampled confirmations are noiseless and ignore it.
+  For sin x, n = 6: nu = 0.5 all three probes resolvable, nu = 0.1 and 0.05 only pi/4,
+  nu = 0.02 none.
+- Limits: readout shots `~ 1/(P_succ p_min) ~ exp(Delta/nu)` with `Delta = max W - min W`;
+  `P_succ` stays ~0.7 (0.57 to 0.88 over all rows), so the heat step is not the bottleneck;
+  loading `phi0` costs `2**n - 2` CX (exponential input cost).
 - Spectrum of phi: Fourier-basis readout, error follows the multinomial prediction at every
-  nu; `4 nu^2 sum k^2 P_k` is the `p`-weighted `<u^2>` (not the L2 energy). No pointwise `u`.
+  nu; `4 nu^2 sum k^2 P_k` is the `p`-weighted mean of `u^2`. No pointwise `u`.
 - Resources (`burgers_resources.py`, `oneshot_resources.build_mirror(advection=False,
   loader=...)`): measured lowered CX equals the construction (`2**n - 2` loader +
   one-shot block). Realistic hardware configurations: route A at n <= 5 (102 CX incl. loader,
