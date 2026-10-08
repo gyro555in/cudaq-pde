@@ -35,6 +35,7 @@ HARDWARE_PATH = [
     "solvers/oneshot_kernels.py",
     "solvers/burgers_kernels.py",
     "solvers/burgers_quantum.py",
+    "solvers/burgers_estimator.py",
     "burgers.py",
 ]
 
