@@ -83,9 +83,9 @@ ruff check . && ruff format --check .
   at 300 s). `--shard K/N` (conftest: tests sorted by node id, dealt round robin) splits
   a run; `env/pytest_login.sh` refuses `--run-slow` without `--shard`, and
   `env/pytest_login_all.sh [N]` runs every shard in its own process and prints each
-  shard's CPU seconds. Measured after CP7 with N = 3: 98 s, 92 s, 76 s (1420 tests,
-  about 266 s in total including three start-ups); the default run alone is about 50 s.
-  Raise N when a shard nears 150 s. Do not run `--run-slow` unsharded in one process.
+  shard's CPU seconds. Measured after CP8 with N = 3: 102 s, 95 s, 102 s (1530 tests,
+  about 300 s in total including three start-ups); the default run alone is about 60 s.
+  Raise N (e.g. to 4) when a shard nears 130 s. Do not run `--run-slow` unsharded in one process.
   `tests/test_markers.py` tests the mechanism with the repository's real `conftest.py`.
 
 ## Numerical reproducibility (non-negotiable)

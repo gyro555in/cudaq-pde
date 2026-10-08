@@ -152,3 +152,12 @@ def test_routes_reject_unknown_names_and_use_expected_ancillas() -> None:
     assert bq.heat_call(d.phi0, 0.5, 1.0, L, "B2").n_anc == 10  # n(n+1)/2
     a = oneshot.diffusion_exponent(0.5, 1.0, L)
     assert bq.heat_call(d.phi0, 0.5, 1.0, L, "C").n_anc == oneshot.gaussian_plan(4, a).q
+
+
+def test_the_scale_of_phi0_does_not_matter() -> None:
+    """Only the direction of phi is encoded: the norm cancels in u, so scaling phi0 by
+    1e5 must give identical counts (same seed) and an identical velocity estimate."""
+    d = case(3, 0.5)
+    a = bq.sample_heat(d.phi0, 0.5, 1.0, L, "A", 2000, seed=4)
+    b = bq.sample_heat(1e5 * d.phi0, 0.5, 1.0, L, "A", 2000, seed=4)
+    assert np.array_equal(a.bin_counts, b.bin_counts)

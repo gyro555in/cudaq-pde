@@ -37,6 +37,7 @@ HARDWARE_PATH = [
     "solvers/burgers_quantum.py",
     "solvers/burgers_estimator.py",
     "solvers/burgers_study.py",
+    "solvers/burgers_resources.py",
     "burgers.py",
 ]
 
